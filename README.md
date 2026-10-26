@@ -7,6 +7,7 @@
 ## What this prototype includes
 
 - A responsive dashboard for mobile data, fixed broadband and power.
+- A Leaflet map using OpenStreetMap tiles, with clearly labelled illustrative demo markers.
 - Clearly labelled sample status summaries and an illustrative, non-geographic map placeholder.
 - Local report-form interactions and service filters.
 - Local-only persistence for reports created in the browser.
@@ -38,12 +39,14 @@ npm run build
 ## Technology
 
 - React with Create React App
+- Leaflet for interactive map controls and markers
+- OpenStreetMap standard raster tiles (attribution shown on the map)
 - Azure Static Web Apps for the current static hosting deployment
 - Future backend and map-provider choices are intentionally deferred until their costs, privacy implications and terms are reviewed
 
 ## Privacy and accuracy
 
-The prototype does not collect precise device location, does not call a live network-status API and does not send report-form entries to a server. Do not use the sample content to make real safety or emergency decisions.
+The prototype does not collect precise device location, does not call a live network-status API and does not send report-form entries to a server. The current map opens around Jaipur and displays illustrative markers; area search does not geocode or recenter the map yet. Standard OpenStreetMap tiles are loaded only for the visible map view; offline tile downloads and prefetching are not supported. Do not use the sample content to make real safety or emergency decisions.
 
 ## Contributing
 

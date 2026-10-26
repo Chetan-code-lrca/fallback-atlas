@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
+import InteractiveMap from './InteractiveMap';
 
 const demoReports = [
   { id: 'demo-1', area: 'Vaishali Nagar', service: 'Mobile data', status: 'degraded', note: 'Intermittent data connection reported in this sample.', time: 'Example report', demo: true },
@@ -81,7 +82,7 @@ function App() {
     if (!value) return;
     setArea(value);
     setFormArea(value);
-    setMessage('Area changed. Statuses on this prototype are examples, not live network data.');
+    setMessage('Area label updated. The map remains centered on Jaipur until area lookup is connected; sample markers are not verified reports.');
     setSearchValue('');
   }
 
@@ -164,22 +165,11 @@ function App() {
         <section className="workspace">
           <div className="panel map-panel">
             <div className="panel-heading">
-              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Signals around the area</h3></div>
+              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map around Jaipur</h3></div>
               <span className="preview-label">ILLUSTRATIVE VIEW</span>
             </div>
-            <div className="map-preview">
-              <div className="map-label map-label-top">JAIPUR REGION · SAMPLE</div>
-              <div className="map-block map-block-one" /><div className="map-block map-block-two" /><div className="map-block map-block-three" />
-              <div className="road road-a" /><div className="road road-b" /><div className="road road-c" /><div className="road road-d" /><div className="road road-e" /><div className="road road-f" />
-              <div className="map-river" />
-              <div className="map-street-label street-one">CIVIL LINES</div><div className="map-street-label street-two">VAISHALI NAGAR</div><div className="map-street-label street-three">MALVIYA NAGAR</div>
-              <div className="map-pin pin-working pin-one"><span>✓</span><small>Civil Lines</small></div>
-              <div className="map-pin pin-degraded pin-two"><span>~</span><small>Vaishali Nagar</small></div>
-              <div className="map-pin pin-down pin-three"><span>!</span><small>Malviya Nagar</small></div>
-              <div className="map-legend"><span><i className="legend-green" /> Working</span><span><i className="legend-amber" /> Degraded</span><span><i className="legend-red" /> Down</span></div>
-              <div className="map-coming-soon">Real map tiles & verified locations come next</div>
-            </div>
-            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>This is a visual placeholder, not a geographic map. No precise locations are collected.</span></div>
+            <InteractiveMap />
+            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>OpenStreetMap tiles are interactive. Markers are illustrative examples, not verified reports. No device GPS is collected.</span></div>
           </div>
 
           <aside className="panel updates-panel">
