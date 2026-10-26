@@ -81,7 +81,7 @@ a { color: inherit; text-decoration: none; }
 .notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 17px; padding: 12px 15px; border: 1px solid #cbe5e3; border-radius: 10px; color: #236d70; background: #edf9f7; font-size: 12px; }
 .notice p { flex: 1; margin: 1px 0; line-height: 1.5; }.notice button { border: 0; color: inherit; background: transparent; font-size: 19px; line-height: 1; }
 .status-overview { margin-top: 34px; }
-.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
 .section-kicker { display: block; margin-bottom: 7px; color: #8190a0; font-size: 9px; letter-spacing: 1.4px; }
 .section-heading h2, .how-section h2 { margin: 0; font-size: 24px; font-weight: 750; letter-spacing: -.7px; }
 .sample-tag { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid #ecd8b4; border-radius: 30px; color: #996719; background: #fff9ed; font-size: 9px; font-weight: 800; letter-spacing: .8px; }
