@@ -189,6 +189,7 @@ test('day and night appearance can be switched and saved', () => {
 
 test('Wi-Fi observations are separate from manually entered service reports', () => {
   const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Share a report'));
   const services = Array.from(container.querySelector('.report-form select').options).map((option) => option.value || option.textContent);
   expect(services).not.toContain('Campus Wi-Fi');
   expect(container.querySelector('.campus-wifi-panel')).not.toBeNull();
