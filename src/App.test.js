@@ -71,28 +71,10 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   expect(container.querySelector('.notice').textContent).toContain('No verified outage reports');
   expect(global.fetch).toHaveBeenCalledTimes(1);
   expect(global.fetch.mock.calls[0][0]).toContain('q=Osaka%2C+Japan');
-});
 
-test('caches geocoding results so the same query is not sent twice', async () => {
-  global.fetch.mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => [{
-      lat: '35.6762',
-      lon: '139.6503',
-      name: 'Tokyo',
-      display_name: 'Tokyo, Japan',
-      type: 'city',
-      addresstype: 'city',
-      address: { city: 'Tokyo', country: 'Japan' }
-    }]
-  });
-
-  const { container } = render(<App />);
-  submitLocation(container, 'Tokyo, Japan');
-  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Tokyo, Japan'));
-  submitLocation(container, 'Tokyo, Japan');
-  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Tokyo, Japan'));
+  // Submitting the same location again should use the browser cache.
+  submitLocation(container, 'Osaka, Japan');
+  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan'));
   expect(global.fetch).toHaveBeenCalledTimes(1);
 });
 
