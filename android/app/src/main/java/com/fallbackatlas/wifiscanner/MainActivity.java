@@ -1,0 +1,590 @@
+package com.fallbackatlas.wifiscanner;
+
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.os.SystemClock;
+import android.provider.Settings;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class MainActivity extends Activity {
+    private static final int REQUEST_WIFI_PERMISSIONS = 4101;
+    private static final String API_URL =
+        "https://ambitious-smoke-035c3f900.6.azurestaticapps.net/api/wifi-scans";
+
+    private WifiManager wifiManager;
+    private LocationManager locationManager;
+    private LinearLayout root;
+    private LinearLayout resultList;
+    private TextView statusView;
+    private TextView countView;
+    private Button scanButton;
+    private Button shareButton;
+    private EditText areaInput;
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private final List<NetworkObservation> observations = new ArrayList<>();
+    private boolean receiverRegistered = false;
+    private boolean lastScanWasFresh = false;
+
+    private final BroadcastReceiver scanReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction())) return;
+            boolean updated = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false);
+            if (!updated) {
+                lastScanWasFresh = false;
+                shareButton.setEnabled(false);
+                setStatus("Android did not refresh the scan. It may have throttled the request; old results will not be uploaded.");
+                return;
+            }
+            showScanResults();
+        }
+    };
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        setContentView(buildUi());
+        renderNetworkRows();
+        setStatus("Ready. Allow nearby Wi-Fi/location permission, then scan to see networks the phone actually detects.");
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (receiverRegistered) return;
+        IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(scanReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(scanReceiver, filter);
+        }
+        receiverRegistered = true;
+    }
+
+    @Override
+    protected void onStop() {
+        if (receiverRegistered) {
+            unregisterReceiver(scanReceiver);
+            receiverRegistered = false;
+        }
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        ioExecutor.shutdownNow();
+        super.onDestroy();
+    }
+
+    private View buildUi() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(24), dp(20), dp(30));
+        root.setBackgroundColor(Color.rgb(244, 247, 250));
+        scroll.addView(root);
+
+        TextView brand = text("FALLBACK ATLAS", 13, Color.rgb(8, 126, 128), true);
+        brand.setLetterSpacing(0.12f);
+        root.addView(brand);
+
+        TextView title = text("Nearby Wi-Fi networks", 28, Color.rgb(18, 40, 58), true);
+        LinearLayout.LayoutParams titleParams = params(-1, -2);
+        titleParams.topMargin = dp(8);
+        root.addView(title, titleParams);
+
+        TextView intro = text(
+            "Real scan results from this Android phone — not guessed network names.",
+            15, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams introParams = params(-1, -2);
+        introParams.topMargin = dp(8);
+        root.addView(intro, introParams);
+
+        TextView privacy = text(
+            "This app never asks for or reads Wi-Fi passwords. It does not upload access-point MAC addresses or a device identifier.",
+            13, Color.rgb(82, 101, 119), false);
+        privacy.setPadding(dp(12), dp(12), dp(12), dp(12));
+        privacy.setBackgroundColor(Color.rgb(231, 243, 241));
+        LinearLayout.LayoutParams privacyParams = params(-1, -2);
+        privacyParams.topMargin = dp(16);
+        root.addView(privacy, privacyParams);
+
+        TextView areaLabel = text("Area label for the shared map", 14, Color.rgb(24, 42, 59), true);
+        LinearLayout.LayoutParams labelParams = params(-1, -2);
+        labelParams.topMargin = dp(20);
+        root.addView(areaLabel, labelParams);
+
+        areaInput = new EditText(this);
+        areaInput.setSingleLine(true);
+        areaInput.setText("SPSU campus, Udaipur");
+        areaInput.setHint("e.g. campus building or public place");
+        areaInput.setTextSize(15);
+        areaInput.setPadding(dp(12), dp(11), dp(12), dp(11));
+        areaInput.setBackgroundColor(Color.WHITE);
+        LinearLayout.LayoutParams areaParams = params(-1, -2);
+        areaParams.topMargin = dp(7);
+        root.addView(areaInput, areaParams);
+
+        scanButton = button("Scan nearby Wi-Fi");
+        LinearLayout.LayoutParams scanParams = params(-1, -2);
+        scanParams.topMargin = dp(15);
+        root.addView(scanButton, scanParams);
+        scanButton.setOnClickListener(view -> beginScan());
+
+        countView = text("No scan results yet", 14, Color.rgb(82, 101, 119), true);
+        LinearLayout.LayoutParams countParams = params(-1, -2);
+        countParams.topMargin = dp(22);
+        root.addView(countView, countParams);
+
+        resultList = new LinearLayout(this);
+        resultList.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams resultsParams = params(-1, -2);
+        resultsParams.topMargin = dp(10);
+        root.addView(resultList, resultsParams);
+
+        statusView = text("", 13, Color.rgb(82, 101, 119), false);
+        statusView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        statusView.setBackgroundColor(Color.WHITE);
+        LinearLayout.LayoutParams statusParams = params(-1, -2);
+        statusParams.topMargin = dp(14);
+        root.addView(statusView, statusParams);
+
+        shareButton = button("Share this scan with Fallback Atlas");
+        shareButton.setEnabled(false);
+        LinearLayout.LayoutParams shareParams = params(-1, -2);
+        shareParams.topMargin = dp(14);
+        root.addView(shareButton, shareParams);
+        shareButton.setOnClickListener(view -> confirmShare());
+
+        TextView limitations = text(
+            "Signal level shows how strongly your phone hears an access point. It does not prove that network has working internet. Android may limit how often scans can run. Shared observations are visible to other users and appear in the website's nearby view for 15 minutes.",
+            12, Color.rgb(101, 117, 135), false);
+        limitations.setPadding(0, dp(18), 0, 0);
+        root.addView(limitations);
+        return scroll;
+    }
+
+    private void beginScan() {
+        if (!hasPermissions()) {
+            requestPermissions(requiredPermissions(), REQUEST_WIFI_PERMISSIONS);
+            return;
+        }
+        if (locationManager == null || !locationManager.isLocationEnabled()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Turn on Location")
+                .setMessage("Android requires Location services to be enabled before an app can obtain fresh Wi-Fi scan results. Fallback Atlas does not continuously track your location.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Open settings", (dialog, which) ->
+                    startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)))
+                .show();
+            return;
+        }
+        if (wifiManager == null || !wifiManager.isWifiEnabled()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Turn on Wi-Fi")
+                .setMessage("Enable Wi-Fi in Android settings, then return and scan again. Fallback Atlas will not connect to networks for you.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Wi-Fi settings", (dialog, which) ->
+                    startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)))
+                .show();
+            return;
+        }
+        try {
+            shareButton.setEnabled(false);
+            lastScanWasFresh = false;
+            setStatus("Requesting a fresh scan from Android…");
+            boolean started = wifiManager.startScan();
+            if (!started) {
+                setStatus("Android declined the scan request. This can happen because of scan throttling. Wait a little and try again; cached results will not be shared.");
+            }
+        } catch (SecurityException error) {
+            setStatus("Android denied Wi-Fi scan access. Check the app permissions in Settings.");
+        }
+    }
+
+    private String[] requiredPermissions() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return new String[] {
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.NEARBY_WIFI_DEVICES
+            };
+        }
+        return new String[] {
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        };
+    }
+
+    private boolean hasPermissions() {
+        boolean fineLocation = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean nearbyWifi = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
+        return fineLocation && nearbyWifi;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_WIFI_PERMISSIONS) return;
+        if (hasPermissions()) beginScan();
+        else setStatus("Wi-Fi scanning needs the runtime permissions requested by Android. Without them this app cannot discover nearby networks.");
+    }
+
+    @SuppressLint("MissingPermission")
+    private void showScanResults() {
+        List<ScanResult> scanResults;
+        try {
+            scanResults = wifiManager.getScanResults();
+        } catch (SecurityException error) {
+            lastScanWasFresh = false;
+            setStatus("Android denied access to the scan results. Check app permissions.");
+            return;
+        }
+
+        long elapsedMicros = SystemClock.elapsedRealtimeNanos() / 1000L;
+        long nowMillis = System.currentTimeMillis();
+        Map<String, NetworkObservation> unique = new HashMap<>();
+        for (ScanResult item : scanResults) {
+            String ssid = item.SSID == null ? "" : item.SSID.trim();
+            if (ssid.isEmpty() || ssid.length() > 32) continue;
+            long ageMicros = item.timestamp > 0 ? Math.max(0L, elapsedMicros - item.timestamp) : Long.MAX_VALUE;
+            long ageSeconds = ageMicros == Long.MAX_VALUE ? Long.MAX_VALUE : ageMicros / 1_000_000L;
+            String key = ssid.toLowerCase(Locale.ROOT) + "|" + item.frequency;
+            NetworkObservation observation = new NetworkObservation(
+                ssid, item.level, item.frequency, securityLabel(item.capabilities),
+                ageSeconds == Long.MAX_VALUE ? 0L : nowMillis - ageSeconds * 1000L,
+                ageSeconds
+            );
+            NetworkObservation old = unique.get(key);
+            if (old == null || observation.signalDbm > old.signalDbm) unique.put(key, observation);
+        }
+
+        observations.clear();
+        observations.addAll(unique.values());
+        observations.sort(Comparator.comparingInt((NetworkObservation item) -> item.signalDbm).reversed());
+        lastScanWasFresh = !observations.isEmpty() && observations.stream().allMatch(item -> item.ageSeconds <= 120L);
+        shareButton.setEnabled(lastScanWasFresh);
+        renderNetworkRows();
+
+        if (observations.isEmpty()) {
+            setStatus("Android returned no visible network names. Hidden SSIDs are intentionally omitted. Check Wi-Fi/Location settings or try again later.");
+        } else if (!lastScanWasFresh) {
+            setStatus("Android returned results, but some appear older than two minutes. You can view them locally, but must run a fresh scan before sharing.");
+        } else {
+            setStatus("Fresh device scan complete. These are nearby access points detected by Android; internet availability has not been tested.");
+        }
+    }
+
+    private void renderNetworkRows() {
+        if (resultList == null) return;
+        resultList.removeAllViews();
+        if (observations.isEmpty()) {
+            TextView empty = text("Scan to see the real network names and signal levels your phone can detect.", 14, Color.rgb(101, 117, 135), false);
+            empty.setPadding(dp(14), dp(14), dp(14), dp(14));
+            empty.setBackgroundColor(Color.WHITE);
+            resultList.addView(empty);
+            if (countView != null) countView.setText("No scan results yet");
+            if (shareButton != null) shareButton.setEnabled(false);
+            return;
+        }
+        countView.setText(observations.size() + " visible network entries · strongest first");
+        for (NetworkObservation item : observations) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackgroundColor(Color.WHITE);
+            LinearLayout.LayoutParams cardParams = params(-1, -2);
+            cardParams.bottomMargin = dp(8);
+            resultList.addView(card, cardParams);
+
+            TextView name = text(item.networkName, 17, Color.rgb(18, 40, 58), true);
+            card.addView(name);
+            String detail = String.format(Locale.ROOT, "%d dBm  ·  %s  ·  %s", item.signalDbm, bandLabel(item.frequencyMhz), item.security);
+            TextView details = text(detail, 13, Color.rgb(82, 101, 119), false);
+            LinearLayout.LayoutParams detailParams = params(-1, -2);
+            detailParams.topMargin = dp(4);
+            card.addView(details, detailParams);
+            TextView strength = text(signalLabel(item.signalDbm) + " signal  ·  " + ageLabel(item.ageSeconds), 12,
+                item.ageSeconds <= 120L ? Color.rgb(8, 126, 128) : Color.rgb(183, 122, 25), true);
+            LinearLayout.LayoutParams strengthParams = params(-1, -2);
+            strengthParams.topMargin = dp(6);
+            card.addView(strength, strengthParams);
+        }
+        if (shareButton != null) shareButton.setEnabled(lastScanWasFresh);
+    }
+
+    private void confirmShare() {
+        if (!lastScanWasFresh || observations.isEmpty()) {
+            Toast.makeText(this, "Run a fresh scan before sharing.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String area = areaInput.getText().toString().trim();
+        if (area.isEmpty()) {
+            areaInput.setError("Enter a public area or campus label");
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Share nearby scan observations?")
+            .setMessage(
+                "This shares visible Wi-Fi names (SSIDs), signal levels, frequency bands, security labels, scan times, your area label and an approximate location rounded to roughly 100 metres. Other Fallback Atlas users may see these observations for 15 minutes. No passwords, access-point MAC addresses, device identifiers or location history will be sent. Signal does not prove internet access. Continue?"
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Share scan", (dialog, which) -> obtainLocationAndUpload(area))
+            .show();
+    }
+
+    @SuppressLint("MissingPermission")
+    private void obtainLocationAndUpload(String area) {
+        if (!hasPermissions()) {
+            setStatus("Location/Wi-Fi permissions are needed for a map observation.");
+            return;
+        }
+        if (locationManager == null || !locationManager.isLocationEnabled()) {
+            setStatus("Turn on Location and try sharing again. Scan results stay on this phone.");
+            return;
+        }
+        setStatus("Getting a one-time approximate location for the scan…");
+        getLocationFromProvider(LocationManager.NETWORK_PROVIDER, area, false);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void getLocationFromProvider(String provider, String area, boolean triedGps) {
+        if (locationManager == null) return;
+        if (!locationManager.isProviderEnabled(provider)) {
+            if (!triedGps) getLocationFromProvider(LocationManager.GPS_PROVIDER, area, true);
+            else setStatus("Android could not provide a current location. Scan results stay on the phone.");
+            return;
+        }
+        try {
+            locationManager.getCurrentLocation(provider, new CancellationSignal(), getMainExecutor(), location -> {
+                if (location != null && System.currentTimeMillis() - location.getTime() < 120_000L) {
+                    uploadScan(area, location);
+                } else if (!triedGps) {
+                    getLocationFromProvider(LocationManager.GPS_PROVIDER, area, true);
+                } else {
+                    setStatus("No recent location fix was available. Scan results stay on the phone.");
+                }
+            });
+        } catch (SecurityException error) {
+            setStatus("Location permission was denied; nothing was uploaded.");
+        } catch (RuntimeException error) {
+            if (!triedGps) getLocationFromProvider(LocationManager.GPS_PROVIDER, area, true);
+            else setStatus("Location lookup failed. Nothing was uploaded.");
+        }
+    }
+
+    private void uploadScan(String area, Location location) {
+        JSONArray networks = new JSONArray();
+        for (NetworkObservation item : observations) {
+            if (item.ageSeconds > 120L) continue;
+            JSONObject network = new JSONObject();
+            try {
+                network.put("networkName", item.networkName);
+                network.put("signalDbm", item.signalDbm);
+                network.put("frequencyMhz", item.frequencyMhz);
+                network.put("security", item.security);
+                network.put("observedAt", Instant.ofEpochMilli(item.observedAtMillis).toString());
+                networks.put(network);
+            } catch (Exception ignored) {
+                // Omit invalid local row. No credentials or BSSID are read.
+            }
+        }
+        if (networks.length() == 0) {
+            setStatus("No recent scan rows remain. Run another scan before sharing.");
+            return;
+        }
+
+        JSONObject body = new JSONObject();
+        try {
+            body.put("area", area);
+            body.put("latitude", location.getLatitude());
+            body.put("longitude", location.getLongitude());
+            body.put("networks", networks);
+        } catch (Exception error) {
+            setStatus("The scan could not be prepared for upload.");
+            return;
+        }
+
+        shareButton.setEnabled(false);
+        setStatus("Sharing " + networks.length() + " nearby observations with Azure…");
+        ioExecutor.execute(() -> {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(API_URL).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(10_000);
+                connection.setReadTimeout(10_000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                connection.setRequestProperty("Accept", "application/json");
+                byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(payload.length);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(payload);
+                }
+                int code = connection.getResponseCode();
+                InputStream stream = code >= 200 && code < 400 ? connection.getInputStream() : connection.getErrorStream();
+                String responseBody = readAll(stream);
+                JSONObject response = new JSONObject(responseBody.isEmpty() ? "{}" : responseBody);
+                String message = response.optString("message", "");
+                runOnUiThread(() -> {
+                    if (code == 201) {
+                        setStatus("Shared " + response.optInt("accepted", networks.length()) +
+                            " real scan observations. The website shows nearby observations, not guaranteed internet availability.");
+                    } else if ("storage_not_configured".equals(response.optString("error"))) {
+                        setStatus("Azure shared scan storage is not configured yet. Nothing was uploaded; your scan remains on this phone.");
+                    } else {
+                        setStatus("Scan was not shared (HTTP " + code + "). " + message);
+                    }
+                    shareButton.setEnabled(lastScanWasFresh);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    setStatus("Could not reach Azure. Nothing was shared; keep this screen open and try again later.");
+                    shareButton.setEnabled(lastScanWasFresh);
+                });
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        });
+    }
+
+    private String readAll(InputStream stream) throws Exception {
+        if (stream == null) return "";
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) builder.append(line);
+        }
+        return builder.toString();
+    }
+
+    private void setStatus(String value) {
+        if (statusView != null) statusView.setText(value);
+    }
+
+    private Button button(String label) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextColor(Color.WHITE);
+        button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(8, 126, 128)));
+        button.setPadding(dp(12), dp(6), dp(12), dp(6));
+        return button;
+    }
+
+    private TextView text(String value, int sizeSp, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(sizeSp);
+        view.setTextColor(color);
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setGravity(Gravity.START);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams params(int width, int height) {
+        return new LinearLayout.LayoutParams(width, height);
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private String securityLabel(String caps) {
+        String value = caps == null ? "" : caps.toUpperCase(Locale.ROOT);
+        if (value.contains("SAE")) return "WPA3";
+        if (value.contains("EAP")) return "Enterprise";
+        if (value.contains("WPA")) return "WPA/WPA2";
+        if (value.contains("WEP")) return "WEP";
+        return "Open/unknown";
+    }
+
+    private String bandLabel(int frequencyMhz) {
+        if (frequencyMhz >= 5925) return "6 GHz";
+        if (frequencyMhz >= 4900) return "5 GHz";
+        return "2.4 GHz";
+    }
+
+    private String signalLabel(int rssi) {
+        if (rssi >= -55) return "Very good";
+        if (rssi >= -67) return "Good";
+        if (rssi >= -75) return "Fair";
+        return "Weak";
+    }
+
+    private String ageLabel(long seconds) {
+        if (seconds == Long.MAX_VALUE) return "unknown age";
+        if (seconds < 5) return "just scanned";
+        if (seconds < 60) return seconds + " sec ago";
+        return (seconds / 60) + " min ago";
+    }
+
+    private static final class NetworkObservation {
+        final String networkName;
+        final int signalDbm;
+        final int frequencyMhz;
+        final String security;
+        final long observedAtMillis;
+        final long ageSeconds;
+
+        NetworkObservation(String networkName, int signalDbm, int frequencyMhz,
+                           String security, long observedAtMillis, long ageSeconds) {
+            this.networkName = networkName;
+            this.signalDbm = signalDbm;
+            this.frequencyMhz = frequencyMhz;
+            this.security = security;
+            this.observedAtMillis = observedAtMillis;
+            this.ageSeconds = ageSeconds;
+        }
+    }
+}
