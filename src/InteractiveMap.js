@@ -52,6 +52,8 @@ function createPopupContent(point) {
 function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, Rajasthan' }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
+  const initialCenterRef = useRef(center);
+  const initialZoomRef = useRef(zoom);
   const [mapStatus, setMapStatus] = useState('loading');
 
   useEffect(() => {
@@ -78,8 +80,8 @@ function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, 
         map = new maplibre.Map({
           container,
           style: 'https://tiles.openfreemap.org/styles/liberty',
-          center,
-          zoom,
+          center: initialCenterRef.current,
+          zoom: initialZoomRef.current,
           minZoom: 3,
           maxZoom: 18,
           scrollZoom: false,
