@@ -45,7 +45,15 @@ function App() {
   const [reports, setReports] = useState(() => {
     try {
       const saved = window.localStorage.getItem('fallback-atlas-local-reports');
-      return saved ? JSON.parse(saved) : demoReports;
+      if (!saved) return demoReports;
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed.filter((report) => (
+        report &&
+        typeof report.id === 'string' &&
+        typeof report.area === 'string' &&
+        serviceOptions.includes(report.service) &&
+        ['working', 'degraded', 'down'].includes(report.status)
+      )) : demoReports;
     } catch (error) {
       return demoReports;
     }
@@ -70,11 +78,22 @@ function App() {
   }, [reports, activeFilter]);
 
   const localReports = reports.filter((report) => !report.demo);
-  const counts = {
-    working: demoReports.filter((report) => report.status === 'working').length,
-    degraded: demoReports.filter((report) => report.status === 'degraded').length,
-    down: demoReports.filter((report) => report.status === 'down').length
-  };
+  const selectedArea = area.trim().toLowerCase();
+  const isJaipurRegion = selectedArea.includes('jaipur') || selectedArea.includes('rajasthan');
+  const areaReports = reports.filter((report) => {
+    const reportArea = String(report.area || '').trim().toLowerCase();
+    if (isJaipurRegion) {
+      return report.demo || /jaipur|rajasthan|civil lines|vaishali nagar|malviya nagar|mansarovar/i.test(reportArea);
+    }
+    return reportArea === selectedArea;
+  });
+  const counts = areaReports.reduce((total, report) => {
+    if (Object.prototype.hasOwnProperty.call(total, report.status)) {
+      total[report.status] += 1;
+    }
+    return total;
+  }, { working: 0, degraded: 0, down: 0 });
+  const hasSampleReports = areaReports.some((report) => report.demo);
 
   function searchArea(event) {
     event.preventDefault();
@@ -131,10 +150,10 @@ function App() {
             <form className="search-form" onSubmit={searchArea}>
               <span className="search-icon" aria-hidden="true">⌕</span>
               <label className="visually-hidden" htmlFor="area-search">Search area or PIN code</label>
-              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Search a neighbourhood or PIN code" />
-              <button className="button button-teal" type="submit">Search area</button>
+              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Enter an area name or PIN code" />
+              <button className="button button-teal" type="submit">Set area</button>
             </form>
-            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Searching changes the viewed area label; live geographic search is not connected yet.</div>
+            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Prototype search updates the area label only; the map remains centered on Jaipur.</div>
           </div>
           <div className="hero-art" aria-hidden="true">
             <div className="orbit orbit-one" />
@@ -152,24 +171,24 @@ function App() {
 
         <section className="status-overview" id="status">
           <div className="section-heading">
-            <div><span className="section-kicker">AREA SNAPSHOT</span><h2>{area}</h2></div>
-            <span className="sample-tag"><span /> SAMPLE DATA</span>
+            <div><span className="section-kicker">AREA SNAPSHOT · SAMPLE + LOCAL REPORTS</span><h2>{area}</h2></div>
+            <span className="sample-tag"><span /> {hasSampleReports ? 'SAMPLE + LOCAL' : 'LOCAL REPORTS'}</span>
           </div>
           <div className="summary-grid">
-            <article className="summary-card summary-working"><div className="summary-icon">✓</div><div><span>Working in examples</span><strong>{counts.working}</strong></div><span className="summary-arrow">↗</span></article>
-            <article className="summary-card summary-degraded"><div className="summary-icon">≈</div><div><span>Degraded in examples</span><strong>{counts.degraded}</strong></div><span className="summary-arrow">↗</span></article>
-            <article className="summary-card summary-down"><div className="summary-icon">!</div><div><span>Down in examples</span><strong>{counts.down}</strong></div><span className="summary-arrow">↗</span></article>
+            <article className="summary-card summary-working"><div className="summary-icon">✓</div><div><span>Working reports</span><strong>{counts.working}</strong></div><span className="summary-arrow">↗</span></article>
+            <article className="summary-card summary-degraded"><div className="summary-icon">≈</div><div><span>Degraded reports</span><strong>{counts.degraded}</strong></div><span className="summary-arrow">↗</span></article>
+            <article className="summary-card summary-down"><div className="summary-icon">!</div><div><span>Down reports</span><strong>{counts.down}</strong></div><span className="summary-arrow">↗</span></article>
           </div>
         </section>
 
         <section className="workspace">
           <div className="panel map-panel">
             <div className="panel-heading">
-              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map around Jaipur</h3></div>
+              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · Jaipur examples</h3></div>
               <span className="preview-label">ILLUSTRATIVE VIEW</span>
             </div>
             <InteractiveMap />
-            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>OpenStreetMap tiles are interactive. Markers are illustrative examples, not verified reports. No device GPS is collected.</span></div>
+            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>Pan and zoom the map. Markers are illustrative examples, not verified live reports; device GPS is not used.</span></div>
           </div>
 
           <aside className="panel updates-panel">
