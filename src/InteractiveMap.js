@@ -10,16 +10,33 @@ const sampleMarkers = [
 
 const statusLabels = { working: 'Working', degraded: 'Degraded', down: 'Down' };
 
-function createPopupContent(point) {
+function createPopupContent(point, demo = true) {
   const content = document.createElement('div');
   content.className = 'atlas-map-popup';
+
   const title = document.createElement('strong');
   title.textContent = point.service + ' · ' + statusLabels[point.status];
+
   const area = document.createElement('p');
   area.textContent = point.area;
+
+  if (point.note && !demo) {
+    const note = document.createElement('p');
+    note.textContent = point.note;
+    content.append(title, area, note);
+  } else {
+    content.append(title, area);
+  }
+
   const disclaimer = document.createElement('small');
-  disclaimer.textContent = 'DEMO ONLY — illustrative marker, not a verified live report.';
-  content.append(title, area, disclaimer);
+  if (demo) {
+    disclaimer.textContent = 'DEMO ONLY — illustrative marker, not a verified live report.';
+  } else {
+    const observed = point.observedAt || point.createdAt;
+    disclaimer.textContent = 'COMMUNITY REPORT — not official utility data.' +
+      (observed ? ' Observed: ' + new Date(observed).toLocaleString() : '');
+  }
+  content.append(disclaimer);
   return content;
 }
 
@@ -43,12 +60,43 @@ function addSampleMarkers(map, maplibre, markerRefs) {
     markerRefs.current.push(marker);
   });
 }
+function addCommunityMarkers(map, maplibre, markerRefs, reports) {
+  (Array.isArray(reports) ? reports : []).forEach((report) => {
+    if (report.latitude === undefined || report.longitude === undefined) return;
+    const latitude = Number(report.latitude);
+    const longitude = Number(report.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
+    if (!statusLabels[report.status] ||
+        !['Mobile data', 'Fixed broadband', 'Power'].includes(report.service)) return;
+
+    const symbol = report.status === 'working' ? '✓' : report.status === 'degraded' ? '≈' : '!';
+    const markerElement = document.createElement('button');
+    markerElement.type = 'button';
+    markerElement.className = 'atlas-marker-pin atlas-pin-' + report.status + ' atlas-community-marker';
+    markerElement.textContent = symbol;
+    markerElement.setAttribute(
+      'aria-label',
+      report.service + ': ' + statusLabels[report.status] + ' community report for ' + report.area
+    );
+
+    const popup = new maplibre.Popup({ offset: 24, closeButton: true })
+      .setDOMContent(createPopupContent(report, false));
+    const marker = new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
+      .setLngLat([longitude, latitude])
+      .setPopup(popup)
+      .addTo(map);
+    markerRefs.current.push(marker);
+  });
+}
+
 
 function InteractiveMap({
   center = UDAIPUR_CENTER,
   zoom = 12,
   areaLabel = 'Udaipur, Rajasthan',
-  showDemoMarkers = true
+  showDemoMarkers = true,
+  reports = []
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -57,10 +105,12 @@ function InteractiveMap({
   const markerRefs = useRef([]);
   const mapLoadedRef = useRef(false);
   const showDemoMarkersRef = useRef(showDemoMarkers);
+  const reportsRef = useRef(reports);
   const [mapStatus, setMapStatus] = useState('loading');
   initialCenterRef.current = center;
   initialZoomRef.current = zoom;
   showDemoMarkersRef.current = showDemoMarkers;
+  reportsRef.current = reports;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -103,6 +153,7 @@ function InteractiveMap({
           markerRefs.current.forEach((marker) => marker.remove());
           markerRefs.current = [];
           if (showDemoMarkersRef.current) addSampleMarkers(map, maplibre, markerRefs);
+          addCommunityMarkers(map, maplibre, markerRefs, reportsRef.current);
         });
 
         map.on('error', () => {
@@ -143,7 +194,8 @@ function InteractiveMap({
     markerRefs.current.forEach((marker) => marker.remove());
     markerRefs.current = [];
     if (showDemoMarkers) addSampleMarkers(map, window.maplibregl, markerRefs);
-  }, [showDemoMarkers]);
+    addCommunityMarkers(map, window.maplibregl, markerRefs, reports);
+  }, [showDemoMarkers, reports]);
 
   return (
     <div className="live-map-shell" data-show-demo-markers={showDemoMarkers ? 'true' : 'false'}>
