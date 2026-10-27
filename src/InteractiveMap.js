@@ -1,25 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const MAP_CENTER = [75.7873, 26.9124];
+const MAP_CENTER = [73.685806, 24.582285];
 
 const sampleMarkers = [
   {
-    position: [75.7878, 26.9055],
-    area: 'Civil Lines',
-    service: 'Fixed broadband',
-    status: 'working',
-    symbol: '✓'
-  },
-  {
-    position: [75.7421, 26.9123],
-    area: 'Vaishali Nagar',
+    position: [73.685575, 24.614134],
+    area: 'Fatehpura',
     service: 'Mobile data',
     status: 'degraded',
     symbol: '≈'
   },
   {
-    position: [75.8042, 26.8545],
-    area: 'Malviya Nagar',
+    position: [73.685806, 24.582285],
+    area: 'Udaipur City',
+    service: 'Fixed broadband',
+    status: 'working',
+    symbol: '✓'
+  },
+  {
+    position: [73.655799, 24.536711],
+    area: 'Hiran Magri',
     service: 'Power',
     status: 'down',
     symbol: '!'
@@ -49,8 +49,9 @@ function createPopupContent(point) {
   return content;
 }
 
-function InteractiveMap() {
+function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, Rajasthan' }) {
   const containerRef = useRef(null);
+  const mapRef = useRef(null);
   const [mapStatus, setMapStatus] = useState('loading');
 
   useEffect(() => {
@@ -77,8 +78,8 @@ function InteractiveMap() {
         map = new maplibre.Map({
           container,
           style: 'https://tiles.openfreemap.org/styles/liberty',
-          center: MAP_CENTER,
-          zoom: 11.5,
+          center,
+          zoom,
           minZoom: 3,
           maxZoom: 18,
           scrollZoom: false,
@@ -143,8 +144,15 @@ function InteractiveMap() {
       window.removeEventListener('maplibre-ready', initializeMap);
       window.removeEventListener('maplibre-failed', handleMapFailure);
       if (map) map.remove();
+      if (mapRef.current === map) mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (mapRef.current && Array.isArray(center) && center.length === 2) {
+      mapRef.current.flyTo({ center, zoom, duration: 550 });
+    }
+  }, [center, zoom]);
 
   return (
     <div className="live-map-shell">
@@ -152,7 +160,7 @@ function InteractiveMap() {
         ref={containerRef}
         className="live-map"
         role="application"
-        aria-label="Interactive map centered on Jaipur with illustrative demo markers"
+        aria-label={"Interactive map centered on " + areaLabel + " with illustrative demo markers"}
       />
       {mapStatus !== 'ready' && (
         <div className="map-status-overlay" role="status">
@@ -162,11 +170,11 @@ function InteractiveMap() {
             <span>
               The map could not load. Check your connection or{' '}
               <a
-                href="https://www.openstreetmap.org/#map=12/26.9124/75.7873"
+                href="https://www.openstreetmap.org/#map=12/24.5823/73.6858"
                 target="_blank"
                 rel="noreferrer"
               >
-                open Jaipur in OpenStreetMap
+                open Udaipur in OpenStreetMap
               </a>.
             </span>
           )}

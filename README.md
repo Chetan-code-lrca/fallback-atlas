@@ -1,84 +1,85 @@
 # Fallback Atlas
 
-**Know what still works.** Fallback Atlas is an open-source prototype for sharing local information about power, mobile data and fixed broadband during disruptions.
+**Know what still works.** Fallback Atlas is an open-source prototype exploring how communities can share local information about power, mobile data and fixed broadband during disruptions.
 
-> **Current stage: prototype.** The map markers and status summaries are examples, not live network measurements. Reports submitted through the form are stored only in the current browser. They are not uploaded, shared with other visitors, or verified.
+> **Current stage: prototype.** Map markers and sample summaries are illustrative only, not live network measurements. Reports from the form are saved only in the current browser. They are not uploaded, shared with other visitors, or verified.
 
 [![Azure Static Web Apps](https://img.shields.io/badge/hosting-Azure%20Static%20Web%20Apps-0078D4)](https://azure.microsoft.com/products/app-service/static)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## What works today
 
-- Responsive dashboard for power, mobile data and fixed broadband.
-- Interactive Jaipur map using MapLibre GL JS and OpenFreeMap's public map style.
-- Visible map attribution provided by the map style.
-- Illustrative marker popups labelled as demo-only.
-- Area labels, report filters and a local report form.
-- Browser-local persistence for test reports.
-- Privacy reminders and no device GPS collection.
-- Automatic static-site deployment from the \`main\` branch through GitHub Actions.
+- Responsive dashboard for mobile data, fixed broadband and power.
+- Interactive MapLibre map centered on Udaipur, with curated presets for Udaipur City, Fatehpura, Hiran Magri and Pratap Nagar.
+- MapLibre GL JS and the OpenFreeMap Liberty style, using OpenStreetMap-derived map data.
+- Clickable, clearly labelled illustrative markers.
+- Search for supported local presets without a paid geocoding API.
+- Local report form, category filters and browser-local persistence.
+- No device GPS request; privacy reminders discourage personal details.
+- Automatic deployment from the `main` branch through GitHub Actions.
 
 ## Technology
 
-| Layer | Current choice | Notes |
+| Layer | Choice | Notes |
 | --- | --- | --- |
-| Frontend | React + Create React App | Existing scaffold; plan a migration away from the deprecated scaffold |
-| Map renderer | MapLibre GL JS | Loaded as a pinned browser CDN script |
-| Map data/style | OpenFreeMap Liberty | Public instance; no API key. Best-effort service without an SLA |
-| Hosting | Azure Static Web Apps Free | No additional Azure backend resources currently used |
-| CI/CD | GitHub Actions | Push builds and deploys the static site |
+| Frontend | React + Create React App | Existing scaffold; migrate to a maintained build tool later |
+| Interactive map | MapLibre GL JS | Loaded as a browser ES module |
+| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |
+| Hosting | Azure Static Web Apps Free | No Azure backend resources currently required |
+| CI/CD | GitHub Actions | Deploys static frontend on push |
+| Tests | React Testing Library + Jest | Runs in a separate GitHub Actions workflow |
 
 ## Run locally
 
 Requirements: Node.js and npm.
 
-\`\`\`bash
-npm install
+```bash
+npm ci
 npm start
-\`\`\`
+```
 
-Create a production build:
+Run the frontend tests:
 
-\`\`\`bash
+```bash
+npm test -- --watchAll=false --runInBand
+```
+
+Build for production:
+
+```bash
 npm run build
-\`\`\`
+```
 
-## Current limitations
+## Limitations
 
 - **No shared backend:** reports are stored in the current browser only.
-- **No live outage data:** sample markers are not reports from utility companies or verified users.
-- **No geocoding:** area search updates the label and does not move the map. The map remains centered on Jaipur.
-- **No offline map:** base map tiles require connectivity.
-- **No offline report sync:** reports do not upload after connectivity returns.
-- **Map availability:** OpenFreeMap's public instance is free to use without an API key, but it does not provide an SLA. Keep the provider replaceable.
+- **No live outage data:** sample markers and statuses are not from utilities or verified users.
+- **Curated location search only:** supported Udaipur presets recenter the map. Arbitrary PIN-code/address search is not connected to a geocoder.
+- **No offline map or upload queue:** map tiles require connectivity and reports are never synchronized.
+- **No freshness/confidence calculation:** these need a trustworthy shared dataset first.
+- **Public map service dependency:** OpenFreeMap offers a free public instance, but availability is not guaranteed by this project. Keep the provider replaceable.
 
 ## Roadmap
 
-1. Validate the use case with a small campus or neighbourhood pilot.
-2. Add a modest backend API and shared report store using a free tier where practical.
-3. Add freshness, confidence and source labels to reports.
-4. Add moderation, rate limiting, abuse prevention and data-retention rules before opening submissions broadly.
-5. Add opt-in offline report queuing and safe synchronization.
-6. Replace the current Create React App scaffold with a maintained build tool and update dependencies after verifying the migration.
-7. Add area lookup only after selecting a geocoder whose usage terms, rate limits and privacy implications fit the project.
+1. Validate the prototype with a small Udaipur campus/hostel usability test.
+2. Build a shared reporting API and database using a suitable free tier; avoid extra Azure resources until needed.
+3. Add timestamps, expiry, freshness and confidence labels so stale reports are not mistaken for current conditions.
+4. Add input validation, rate limiting, moderation, abuse prevention and retention rules before public submissions.
+5. Add an offline report queue with safe synchronization.
+6. Migrate away from the deprecated Create React App scaffold and update dependencies after testing.
+7. Expand location lookup only after choosing a geocoder with acceptable terms, limits and privacy implications.
 
 ## Privacy and safety
 
-The current prototype does not request browser geolocation, does not call a live network-status API, and does not upload report-form entries. Do not enter personal information in reports. Do not rely on demo data for emergency, travel or safety decisions.
+The prototype does not request browser geolocation, call a live network-status API or upload submitted reports. Do not enter personal information. Do not rely on demo data for emergency, travel or safety decisions.
 
 ## Map attribution and usage
 
-The map uses OpenFreeMap's public instance with map data from OpenStreetMap/OpenMapTiles. MapLibre displays the attribution provided in the map style. Read the [OpenFreeMap quick start](https://openfreemap.org/quick_start/), [OpenFreeMap terms](https://openfreemap.org/terms/), and [OpenStreetMap copyright](https://www.openstreetmap.org/copyright).
+The map uses OpenFreeMap's public style and OpenStreetMap-derived data. Keep the attribution displayed by the map style. Review the [OpenFreeMap quick start](https://openfreemap.org/quick_start/), [OpenFreeMap terms](https://openfreemap.org/terms/) and [OpenStreetMap copyright](https://www.openstreetmap.org/copyright). Do not add bulk tile downloads or prefetching without checking the provider's terms.
 
-Do not bulk-download map tiles or add prefetch/offline map downloading without checking the provider's current terms.
+## Contributing and security
 
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Bug reports and feature ideas are welcome.
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for reporting security problems.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 

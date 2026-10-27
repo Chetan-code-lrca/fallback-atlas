@@ -3,11 +3,66 @@ import './App.css';
 import InteractiveMap from './InteractiveMap';
 
 const demoReports = [
-  { id: 'demo-1', area: 'Vaishali Nagar', service: 'Mobile data', status: 'degraded', note: 'Intermittent data connection reported in this sample.', time: 'Example report', demo: true },
-  { id: 'demo-2', area: 'Civil Lines', service: 'Fixed broadband', status: 'working', note: 'Broadband shown as available in this sample.', time: 'Example report', demo: true },
-  { id: 'demo-3', area: 'Malviya Nagar', service: 'Power', status: 'down', note: 'Power interruption shown for demonstration only.', time: 'Example report', demo: true },
-  { id: 'demo-4', area: 'Mansarovar', service: 'Mobile data', status: 'working', note: 'Mobile data shown as available in this sample.', time: 'Example report', demo: true }
+  { id: 'demo-1', area: 'Fatehpura, Udaipur', service: 'Mobile data', status: 'degraded', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
+  { id: 'demo-2', area: 'Udaipur City', service: 'Fixed broadband', status: 'working', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
+  { id: 'demo-3', area: 'Hiran Magri, Udaipur', service: 'Power', status: 'down', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
+  { id: 'demo-4', area: 'Pratap Nagar, Udaipur', service: 'Mobile data', status: 'working', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true }
 ];
+
+const UDAIPUR_AREAS = [
+  {
+    id: 'fatehpura',
+    label: 'Fatehpura, Udaipur',
+    aliases: ['fatehpura'],
+    matchTerms: ['fatehpura'],
+    center: [73.685575, 24.614134],
+    zoom: 13.4
+  },
+  {
+    id: 'hiran-magri',
+    label: 'Hiran Magri, Udaipur',
+    aliases: ['hiran magri', 'hiranmagri'],
+    matchTerms: ['hiran magri', 'hiranmagri'],
+    center: [73.655799, 24.536711],
+    zoom: 13.2
+  },
+  {
+    id: 'pratap-nagar',
+    label: 'Pratap Nagar, Udaipur',
+    aliases: ['pratap nagar'],
+    matchTerms: ['pratap nagar'],
+    center: [73.75327, 24.59262],
+    zoom: 13.2
+  },
+  {
+    id: 'udaipur-city',
+    label: 'Udaipur City',
+    aliases: ['udaipur city', 'old city', 'city centre', 'city center', 'city palace'],
+    matchTerms: ['udaipur city', 'old city', 'city palace', 'sukhadia circle', 'surajpole', 'hathipole'],
+    center: [73.685806, 24.582285],
+    zoom: 13
+  },
+  {
+    id: 'udaipur',
+    label: 'Udaipur, Rajasthan',
+    aliases: ['udaipur', 'rajasthan'],
+    matchTerms: ['udaipur', 'fatehpura', 'hiran magri', 'hiranmagri', 'pratap nagar', 'surajpole', 'hathipole'],
+    center: [73.685806, 24.582285],
+    zoom: 12
+  }
+];
+
+function findLocalArea(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/\\s+/g, ' ');
+  if (!normalized) return null;
+  return UDAIPUR_AREAS.find((preset) =>
+    preset.aliases.some((alias) =>
+      normalized === alias ||
+      normalized.startsWith(alias + ',') ||
+      normalized.includes(alias)
+    )
+  ) || null;
+}
 
 const serviceOptions = ['Mobile data', 'Fixed broadband', 'Power'];
 const statusOptions = [
@@ -37,7 +92,10 @@ function ServiceIcon({ service }) {
 }
 
 function App() {
-  const [area, setArea] = useState('Jaipur, Rajasthan');
+  const [area, setArea] = useState('Udaipur, Rajasthan');
+  const [mapLocationLabel, setMapLocationLabel] = useState('Udaipur, Rajasthan');
+  const [mapCenter, setMapCenter] = useState([73.685806, 24.582285]);
+  const [mapZoom, setMapZoom] = useState(12);
   const [searchValue, setSearchValue] = useState('');
   const [activeView, setActiveView] = useState('map');
   const [activeFilter, setActiveFilter] = useState('All updates');
@@ -58,7 +116,7 @@ function App() {
       return demoReports;
     }
   });
-  const [formArea, setFormArea] = useState('Jaipur, Rajasthan');
+  const [formArea, setFormArea] = useState('Udaipur, Rajasthan');
   const [formService, setFormService] = useState('Mobile data');
   const [formStatus, setFormStatus] = useState('degraded');
   const [formNote, setFormNote] = useState('');
@@ -79,11 +137,14 @@ function App() {
 
   const localReports = reports.filter((report) => !report.demo);
   const selectedArea = area.trim().toLowerCase();
-  const isJaipurRegion = selectedArea.includes('jaipur') || selectedArea.includes('rajasthan');
+  const selectedAreaPreset = findLocalArea(area);
   const areaReports = reports.filter((report) => {
     const reportArea = String(report.area || '').trim().toLowerCase();
-    if (isJaipurRegion) {
-      return report.demo || /jaipur|rajasthan|civil lines|vaishali nagar|malviya nagar|mansarovar/i.test(reportArea);
+    if (selectedAreaPreset?.id === 'udaipur') {
+      return report.demo || selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
+    }
+    if (selectedAreaPreset) {
+      return selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
     }
     return reportArea === selectedArea;
   });
@@ -99,30 +160,50 @@ function App() {
     event.preventDefault();
     const value = searchValue.trim();
     if (!value) return;
-    setArea(value);
-    setFormArea(value);
-    setMessage('Area label updated. The map remains centered on Jaipur until area lookup is connected; sample markers are not verified reports.');
+
+    const preset = findLocalArea(value);
+    if (!preset) {
+      setMessage('No map preset for "' + value + '" yet. Try Udaipur, Fatehpura, Hiran Magri, Pratap Nagar or Udaipur City. No external geocoding API is used.');
+      setSearchValue('');
+      return;
+    }
+
+    setArea(preset.label);
+    setFormArea(preset.label);
+    setMapLocationLabel(preset.label);
+    setMapCenter(preset.center);
+    setMapZoom(preset.zoom);
+    setMessage('Map moved to ' + preset.label + '. All example markers are illustrative, not verified live service reports.');
     setSearchValue('');
   }
 
   function submitReport(event) {
     event.preventDefault();
+    const reportArea = formArea.trim() || area;
     const report = {
       id: 'local-' + Date.now(),
-      area: formArea.trim() || area,
+      area: reportArea,
       service: formService,
       status: formStatus,
       note: formNote.trim() || 'Community status report.',
       time: 'Just now · saved on this device',
       demo: false
     };
+    const preset = findLocalArea(reportArea);
     setReports((current) => [report, ...current]);
     setArea(report.area);
+    if (preset) {
+      setMapLocationLabel(preset.label);
+      setMapCenter(preset.center);
+      setMapZoom(preset.zoom);
+    }
     setActiveView('feed');
     setActiveFilter('All updates');
     setReportOpen(false);
     setFormNote('');
-    setMessage('Report saved on this device only. It has not been sent to a server.');
+    setMessage(preset
+      ? 'Report saved on this device only. It has not been sent to a server.'
+      : 'Report saved on this device only. The map stays centered on ' + mapLocationLabel + ' because this area has no map preset yet.');
   }
 
   return (
@@ -150,10 +231,10 @@ function App() {
             <form className="search-form" onSubmit={searchArea}>
               <span className="search-icon" aria-hidden="true">⌕</span>
               <label className="visually-hidden" htmlFor="area-search">Search area or PIN code</label>
-              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Enter an area name or PIN code" />
+              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Udaipur, Fatehpura, Hiran Magri…" />
               <button className="button button-teal" type="submit">Set area</button>
             </form>
-            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Prototype search updates the area label only; the map remains centered on Jaipur.</div>
+            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Search supports a few Udaipur area presets only; no external geocoder or API is used.</div>
           </div>
           <div className="hero-art" aria-hidden="true">
             <div className="orbit orbit-one" />
@@ -184,10 +265,10 @@ function App() {
         <section className="workspace">
           <div className="panel map-panel">
             <div className="panel-heading">
-              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · Jaipur examples</h3></div>
+              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · {mapLocationLabel}</h3></div>
               <span className="preview-label">ILLUSTRATIVE VIEW</span>
             </div>
-            <InteractiveMap />
+            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} />
             <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>Pan and zoom the map. Markers are illustrative examples, not verified live reports; device GPS is not used.</span></div>
           </div>
 
@@ -204,9 +285,9 @@ function App() {
               <button role="tab" aria-selected={activeView === 'feed'} className={activeView === 'feed' ? 'selected' : ''} onClick={() => setActiveView('feed')}>Report feed <span>{localReports.length > 0 ? localReports.length : ''}</span></button>
             </div>
             {activeView === 'map' && <div className="service-status-list">
-              <div className="service-status-item"><ServiceIcon service="Mobile data" /><div className="service-status-main"><strong>Mobile data</strong><small>Example · Vaishali Nagar</small></div><StatusPill status="degraded" /></div>
-              <div className="service-status-item"><ServiceIcon service="Fixed broadband" /><div className="service-status-main"><strong>Fixed broadband</strong><small>Example · Civil Lines</small></div><StatusPill status="working" /></div>
-              <div className="service-status-item"><ServiceIcon service="Power" /><div className="service-status-main"><strong>Power</strong><small>Example · Malviya Nagar</small></div><StatusPill status="down" /></div>
+              <div className="service-status-item"><ServiceIcon service="Mobile data" /><div className="service-status-main"><strong>Mobile data</strong><small>Demo · Fatehpura</small></div><StatusPill status="degraded" /></div>
+              <div className="service-status-item"><ServiceIcon service="Fixed broadband" /><div className="service-status-main"><strong>Fixed broadband</strong><small>Demo · Udaipur City</small></div><StatusPill status="working" /></div>
+              <div className="service-status-item"><ServiceIcon service="Power" /><div className="service-status-main"><strong>Power</strong><small>Demo · Hiran Magri</small></div><StatusPill status="down" /></div>
               <div className="confidence-note"><span>↗</span><div><strong>Confidence & freshness</strong><small>Evidence scoring will be added with the reporting API.</small></div></div>
             </div>}
             {activeView === 'feed' && <div className="report-feed">
@@ -234,7 +315,7 @@ function App() {
           <div className="modal-heading"><div><span className="section-kicker">COMMUNITY UPDATE</span><h2 id="report-title">Report local status</h2></div><button className="modal-close" aria-label="Close report form" onClick={() => setReportOpen(false)}>×</button></div>
           <div className="modal-demo-note"><strong>Prototype notice</strong><span>This report is saved in this browser only. It is not uploaded or visible to others.</span></div>
           <form onSubmit={submitReport} className="report-form">
-            <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Civil Lines, Jaipur" /></label>
+            <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Fatehpura, Udaipur" /></label>
             <label>Infrastructure<select value={formService} onChange={(event) => setFormService(event.target.value)}>{serviceOptions.map((service) => <option key={service}>{service}</option>)}</select></label>
             <fieldset><legend>What's the current status?</legend><div className="status-choice-list">{statusOptions.map((option) => <label key={option.value} className={'status-choice choice-' + option.value}><input type="radio" name="status" value={option.value} checked={formStatus === option.value} onChange={(event) => setFormStatus(event.target.value)} /><span className="choice-dot" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></label>)}</div></fieldset>
             <label>What did you observe? <span className="optional-label">Optional</span><textarea rows="3" maxLength="280" value={formNote} onChange={(event) => setFormNote(event.target.value)} placeholder="Share a brief, non-personal observation." /></label>

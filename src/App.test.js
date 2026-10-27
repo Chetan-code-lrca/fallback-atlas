@@ -4,45 +4,87 @@ import App from './App';
 
 beforeEach(() => {
   window.localStorage.clear();
+  delete window.maplibregl;
+  delete window.__MAPLIBRE_LOAD_STATE;
 });
 
 afterEach(() => {
   cleanup();
 });
 
-test('renders the Fallback Atlas prototype and marks the map as illustrative', () => {
+function buttonContaining(container, text) {
+  return Array.from(container.querySelectorAll('button')).find((button) =>
+    button.textContent.includes(text)
+  );
+}
+
+test('defaults to Udaipur and labels map markers as illustrative', () => {
   const { container } = render(<App />);
 
   expect(container.querySelector('h1').textContent).toContain('works.');
+  expect(container.querySelector('.section-heading h2').textContent).toBe('Udaipur, Rajasthan');
+  expect(container.querySelector('.panel-heading h3').textContent).toContain('Udaipur');
+  expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Udaipur, Rajasthan');
   expect(container.querySelector('.map-footer').textContent).toContain('illustrative examples');
-  expect(container.querySelector('.live-map')).toBeTruthy();
 });
 
-test('sets an area label and clearly explains that lookup is not connected', () => {
+test('searching a supported Udaipur area recenters the map preset', () => {
   const { container } = render(<App />);
   const input = container.querySelector('#area-search');
 
-  fireEvent.change(input, { target: { value: '523105' } });
-  fireEvent.click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes('Set area')));
+  fireEvent.change(input, { target: { value: 'Hiran Magri' } });
+  fireEvent.click(buttonContaining(container, 'Set area'));
 
-  expect(container.querySelector('.section-heading h2').textContent).toBe('523105');
-  expect(container.querySelector('.notice').textContent).toContain('map remains centered on Jaipur');
+  expect(container.querySelector('.section-heading h2').textContent).toBe('Hiran Magri, Udaipur');
+  expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Hiran Magri, Udaipur');
+  expect(container.querySelector('.notice').textContent).toContain('illustrative');
 });
 
-test('saves a report locally and shows it in the feed', () => {
+test('unsupported PIN/address search explains which local presets are available', () => {
   const { container } = render(<App />);
-  const buttons = Array.from(container.querySelectorAll('button'));
-  fireEvent.click(buttons.find((button) => button.textContent.includes('Report status')));
+  const input = container.querySelector('#area-search');
 
-  const areaInput = container.querySelector('.report-form input');
-  fireEvent.change(areaInput, { target: { value: 'Campus Block A' } });
+  fireEvent.change(input, { target: { value: '313001' } });
+  fireEvent.click(buttonContaining(container, 'Set area'));
 
-  const noteInput = container.querySelector('.report-form textarea');
-  fireEvent.change(noteInput, { target: { value: 'Testing the local prototype.' } });
+  expect(container.querySelector('.section-heading h2').textContent).toBe('Udaipur, Rajasthan');
+  expect(container.querySelector('.notice').textContent).toContain('Try Udaipur, Fatehpura, Hiran Magri, Pratap Nagar or Udaipur City');
+  expect(container.querySelector('.notice').textContent).toContain('No external geocoding API is used');
+});
 
-  fireEvent.click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes('Save local report')));
+test('report form saves locally and shows the report in the feed', () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Report status'));
+
+  const areaInput = container.querySelector('.report-form input:not([type="radio"])');
+  fireEvent.change(areaInput, { target: { value: 'Hiran Magri, Udaipur' } });
+  fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
+  fireEvent.click(container.querySelector('.status-choice input[value="down"]'));
+  fireEvent.change(container.querySelector('.report-form textarea'), {
+    target: { value: 'Testing the local prototype.' }
+  });
+  fireEvent.click(buttonContaining(container, 'Save local report'));
 
   expect(container.querySelector('.notice').textContent).toContain('saved on this device only');
-  expect(container.querySelector('.report-feed').textContent).toContain('Campus Block A');
-  expect(window.localStorage.getItem('fallback-atlas-local-reports')).toContain('Campus Block A');
+  expect(container.querySelector('.report-feed').textContent).toContain('Hiran Magri, Udaipur');
+  expect(container.querySelector('.report-feed').textContent).toContain('Power');
+  expect(container.querySelector('.report-feed').textContent).toContain('Down');
+  expect(window.localStorage.getItem('fallback-atlas-local-reports')).toContain('Hiran Magri, Udaipur');
+});
+
+test('service filters only show reports from the selected category', () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Report status'));
+  fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
+    target: { value: 'Fatehpura, Udaipur' }
+  });
+  fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
+  fireEvent.click(container.querySelector('.status-choice input[value="working"]'));
+  fireEvent.click(buttonContaining(container, 'Save local report'));
+
+  fireEvent.click(buttonContaining(container, 'Power'));
+  const feedText = container.querySelector('.report-feed').textContent;
+  expect(feedText).toContain('Power');
+  expect(feedText).not.toContain('Mobile data');
+  expect(feedText).not.toContain('Fixed broadband');
 });
