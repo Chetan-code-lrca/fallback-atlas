@@ -53,7 +53,7 @@ const UDAIPUR_AREAS = [
 ];
 
 function findLocalArea(value) {
-  const normalized = String(value || '').trim().toLowerCase().replace(/\\s+/g, ' ');
+  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   if (!normalized) return null;
   return UDAIPUR_AREAS.find((preset) =>
     preset.aliases.some((alias) =>

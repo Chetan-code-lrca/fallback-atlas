@@ -34,7 +34,7 @@
 Requirements: Node.js and npm.
 
 ```bash
-npm ci
+npm install
 npm start
 ```
 
