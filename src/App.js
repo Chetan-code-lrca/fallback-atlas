@@ -503,12 +503,36 @@ function App() {
           <div className="demo-ribbon"><span className="demo-ribbon-dot" /> Prototype preview <span className="ribbon-divider">/</span> Example data, not live service status</div>
         </section>
 
+        <div className={'api-status-banner api-mode-' + apiMode} role="status" aria-live="polite">
+          <span className="api-status-dot" />
+          <div className="api-status-copy">
+            <strong>
+              {apiMode === 'shared' ? 'Shared reporting is online' :
+                apiMode === 'checking' ? 'Checking report service…' :
+                  apiMode === 'local' ? 'Local-only mode — storage setup still needed' :
+                    'Shared report service unavailable'}
+            </strong>
+            <small>
+              {apiMode === 'shared'
+                ? 'New reports can be seen by other visitors. Reports are still community-submitted, not independently verified.'
+                : pendingReports.length
+                  ? pendingReports.length + ' report(s) are pending sync and remain on this device only.'
+                  : 'Until shared storage is connected, test reports stay in this browser and are not visible to classmates.'}
+            </small>
+          </div>
+          {apiMode === 'shared' && pendingReports.length > 0 && (
+            <button className="button button-outline sync-button" onClick={syncPendingReports} disabled={syncingPending}>
+              {syncingPending ? 'Syncing…' : 'Sync ' + pendingReports.length + ' pending'}
+            </button>
+          )}
+        </div>
+
         {message && <div className="notice" role="status"><span>ⓘ</span><p>{message}</p><button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
 
         <section className="status-overview" id="status">
           <div className="section-heading">
             <div><span className="section-kicker">AREA SNAPSHOT · SAMPLE + LOCAL REPORTS</span><h2>{area}</h2></div>
-            <span className="sample-tag"><span /> {hasSampleReports ? 'SAMPLE + LOCAL' : 'LOCAL REPORTS'}</span>
+            <span className="sample-tag"><span /> {hasSampleReports ? 'DEMO DATA' : sharedReportCount ? 'SHARED REPORTS' : localReports.length ? 'LOCAL REPORTS' : 'NO REPORTS'}</span>
           </div>
           <div className="summary-grid">
             <article className="summary-card summary-working"><div className="summary-icon">✓</div><div><span>Working reports</span><strong>{counts.working}</strong></div><span className="summary-arrow">↗</span></article>
@@ -523,7 +547,7 @@ function App() {
               <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · {mapLocationLabel}</h3></div>
               <span className="preview-label">{showDemoMarkers ? 'DEMO MARKERS' : 'LOCATION VIEW'}</span>
             </div>
-            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} />
+            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} reports={areaReports.filter((report) => !report.demo)} />
             <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>{showDemoMarkers ? 'Sample markers are shown only for the Udaipur prototype. They are not verified live reports.' : 'No sample markers are shown for this searched location. Reports appear only when matching reports exist.'} Map by <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · data © OpenStreetMap contributors.</span></div>
           </div>
 
@@ -541,21 +565,25 @@ function App() {
             </div>
             {activeView === 'map' && <div className="service-status-list">
               {areaReports.length === 0 ? (
-                <div className="empty-state"><span>⌁</span><strong>No reports for this location yet</strong><p>Try another area or add a local test report. Reports are not shared with other visitors in this prototype.</p></div>
+                <div className="empty-state"><span>⌁</span><strong>No reports for this location yet</strong><p>Try a nearby area or submit the first report. Reports can be shared once the backend is configured.</p></div>
               ) : areaReports.slice(0, 5).map((report) => (
                 <div className="service-status-item" key={report.id}>
                   <ServiceIcon service={report.service} />
-                  <div className="service-status-main"><strong>{report.service}</strong><small>{report.area} · {report.demo ? 'Demo only' : 'Local browser report'}</small></div>
+                  <div className="service-status-main">
+                    <strong>{report.service}</strong>
+                    <small>{report.area} · {report.demo ? 'Demo only' : report.shared ? 'Shared community report' : 'Saved on this device'}</small>
+                    <span className={'freshness-pill ' + freshnessClass(report)}>{freshnessLabel(report)} · {timeAgo(report)}</span>
+                  </div>
                   <StatusPill status={report.status} />
                 </div>
               ))}
-              <div className="confidence-note"><span>↗</span><div><strong>Confidence & freshness</strong><small>{hasSampleReports ? 'Sample data is illustrative, not verified.' : 'Freshness and confidence need a shared reporting API.'}</small></div></div>
+              <div className="confidence-note"><span>↗</span><div><strong>Evidence freshness</strong><small>{evidenceSummary}</small></div></div>
             </div>}
             {activeView === 'feed' && <div className="report-feed">
-              {visibleReports.length === 0 ? <div className="empty-state"><span>⌁</span><strong>No reports in this filter</strong><p>Try a different service or submit a local example.</p></div> : visibleReports.map((report) => <article className="feed-item" key={report.id}><div className="feed-item-top"><strong>{report.service}</strong><StatusPill status={report.status} /></div><span className="feed-area">⌖ {report.area}</span><p>{report.note}</p><small>{report.time}{report.demo ? ' · demo' : ' · local only'}</small></article>)}
+              {visibleReports.length === 0 ? <div className="empty-state"><span>⌁</span><strong>No reports in this filter</strong><p>Try a different service or submit a local example.</p></div> : visibleReports.map((report) => <article className="feed-item" key={report.id}><div className="feed-item-top"><strong>{report.service}</strong><StatusPill status={report.status} /></div><span className="feed-area">⌖ {report.area}</span><p>{report.note}</p><div className="feed-metadata"><span className={'freshness-pill ' + freshnessClass(report)}>{freshnessLabel(report)} · {timeAgo(report)}</span><small>{report.demo ? 'Demo only' : report.shared ? 'Shared community report' : 'Local only · pending sync'}</small></div></article>)}
             </div>}
             <button className="button button-outline full-button" onClick={() => { setFormArea(area); setReportOpen(true); }}><span>＋</span> Add a community report</button>
-            <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}Local prototype only · reports are saved in this browser and are not shared.</p>
+            <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}{apiMode === 'shared' ? 'Shared reports are community-submitted, not official outage confirmations.' : 'Local reports are saved in this browser and are not shared yet.'}</p>
           </aside>
         </section>
 
@@ -569,19 +597,19 @@ function App() {
         </section>
       </main>
 
-      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Open-source prototype · Built for community resilience</span><span className="footer-status"><i /> Demo mode</span></footer>
+      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Open-source prototype · Built for community resilience</span><span className="footer-status"><i /> {apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
 
       {reportOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
         <section className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
           <div className="modal-heading"><div><span className="section-kicker">COMMUNITY UPDATE</span><h2 id="report-title">Report local status</h2></div><button className="modal-close" aria-label="Close report form" onClick={() => setReportOpen(false)}>×</button></div>
-          <div className="modal-demo-note"><strong>Prototype notice</strong><span>This report is saved in this browser only. It is not uploaded or visible to others.</span></div>
+          <div className="modal-demo-note"><strong>{apiMode === 'shared' ? 'Community report' : 'Local fallback enabled'}</strong><span>{apiMode === 'shared' ? 'Your report will be shared with visitors near this area. Do not include personal information.' : 'Until storage is configured, this report stays in your browser and will be marked pending sync.'}</span></div>
           <form onSubmit={submitReport} className="report-form">
             <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Fatehpura, Udaipur" /></label>
             <label>Infrastructure<select value={formService} onChange={(event) => setFormService(event.target.value)}>{serviceOptions.map((service) => <option key={service}>{service}</option>)}</select></label>
             <fieldset><legend>What's the current status?</legend><div className="status-choice-list">{statusOptions.map((option) => <label key={option.value} className={'status-choice choice-' + option.value}><input type="radio" name="status" value={option.value} checked={formStatus === option.value} onChange={(event) => setFormStatus(event.target.value)} /><span className="choice-dot" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></label>)}</div></fieldset>
             <label>What did you observe? <span className="optional-label">Optional</span><textarea rows="3" maxLength="280" value={formNote} onChange={(event) => setFormNote(event.target.value)} placeholder="Share a brief, non-personal observation." /></label>
             <div className="privacy-note"><span>⌑</span><p>Don't include phone numbers, names, exact home addresses or other personal details.</p></div>
-            <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setReportOpen(false)}>Cancel</button><button type="submit" className="button button-teal">Save local report <span>→</span></button></div>
+            <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setReportOpen(false)}>Cancel</button><button type="submit" className="button button-teal" disabled={reportSubmitting}>{reportSubmitting ? 'Submitting…' : 'Submit report'} <span>→</span></button></div>
           </form>
         </section>
       </div>}
