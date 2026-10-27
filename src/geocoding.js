@@ -103,16 +103,19 @@ export async function geocodeLocation(query) {
   if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) return cached.location;
 
   await waitForRequestSlot();
-  const url = new URL(getEndpoint());
-  url.searchParams.set('q', normalized);
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('limit', '1');
-  url.searchParams.set('addressdetails', '1');
-  url.searchParams.set('namedetails', '1');
+  const params = [
+    ['q', normalized],
+    ['format', 'jsonv2'],
+    ['limit', '1'],
+    ['addressdetails', '1'],
+    ['namedetails', '1']
+  ].map(([key, value]) => encodeURIComponent(key) + '=' + encodeURIComponent(value)).join('&');
+  const endpoint = getEndpoint();
+  const url = endpoint + (endpoint.includes('?') ? '&' : '?') + params;
 
   let response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetch(url, {
       headers: { Accept: 'application/json' },
       referrerPolicy: 'strict-origin-when-cross-origin'
     });

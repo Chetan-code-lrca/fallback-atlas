@@ -82,7 +82,7 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   expect(container.querySelector('.live-map-shell').getAttribute('data-show-demo-markers')).toBe('false');
   expect(container.querySelector('.notice').textContent).toContain('No verified outage reports');
   expect(global.fetch).toHaveBeenCalledTimes(1);
-  expect(global.fetch.mock.calls[0][0]).toContain('q=Osaka%2C+Japan');
+  expect(global.fetch.mock.calls[0][0]).toContain('q=Osaka%2C%20Japan');
 
   // Submitting the same location again should use the browser cache.
   await submitLocationAndWait(container, 'Osaka, Japan');
