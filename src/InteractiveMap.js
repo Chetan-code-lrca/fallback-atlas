@@ -54,73 +54,94 @@ function InteractiveMap() {
   const [mapStatus, setMapStatus] = useState('loading');
 
   useEffect(() => {
-    const maplibre = window.maplibregl;
     const container = containerRef.current;
-
-    if (!maplibre || !container) {
-      setMapStatus('unavailable');
-      return undefined;
-    }
-
     let map;
     let mapLoaded = false;
+    let cancelled = false;
 
-    try {
-      map = new maplibre.Map({
-        container,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
-        center: MAP_CENTER,
-        zoom: 11.5,
-        minZoom: 3,
-        maxZoom: 18,
-        scrollZoom: false,
-        cooperativeGestures: true,
-        attributionControl: true,
-        pitchWithRotate: false,
-        dragRotate: false
-      });
+    const handleMapFailure = () => {
+      setMapStatus('unavailable');
+    };
 
-      map.addControl(
-        new maplibre.NavigationControl({ showCompass: false }),
-        'top-right'
-      );
-      map.addControl(
-        new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }),
-        'bottom-left'
-      );
+    const initializeMap = () => {
+      const maplibre = window.maplibregl;
+      if (cancelled || map || !container) return;
+      if (!maplibre) {
+        if (window.__MAPLIBRE_LOAD_STATE === 'error') {
+          setMapStatus('unavailable');
+        }
+        return;
+      }
 
-      map.on('load', () => {
-        mapLoaded = true;
-        setMapStatus('ready');
-
-        sampleMarkers.forEach((point) => {
-          const markerElement = document.createElement('button');
-          markerElement.type = 'button';
-          markerElement.className = 'atlas-marker-pin atlas-pin-' + point.status;
-          markerElement.textContent = point.symbol;
-          markerElement.setAttribute(
-            'aria-label',
-            point.service + ': ' + statusLabels[point.status] + ' example for ' + point.area
-          );
-
-          const popup = new maplibre.Popup({ offset: 24, closeButton: true })
-            .setDOMContent(createPopupContent(point));
-
-          new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
-            .setLngLat(point.position)
-            .setPopup(popup)
-            .addTo(map);
+      try {
+        map = new maplibre.Map({
+          container,
+          style: 'https://tiles.openfreemap.org/styles/liberty',
+          center: MAP_CENTER,
+          zoom: 11.5,
+          minZoom: 3,
+          maxZoom: 18,
+          scrollZoom: false,
+          cooperativeGestures: true,
+          attributionControl: true,
+          pitchWithRotate: false,
+          dragRotate: false
         });
-      });
 
-      map.on('error', () => {
-        if (!mapLoaded) setMapStatus('unavailable');
-      });
-    } catch (error) {
+        map.addControl(
+          new maplibre.NavigationControl({ showCompass: false }),
+          'top-right'
+        );
+        map.addControl(
+          new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }),
+          'bottom-left'
+        );
+
+        map.on('load', () => {
+          mapLoaded = true;
+          if (!cancelled) setMapStatus('ready');
+
+          sampleMarkers.forEach((point) => {
+            const markerElement = document.createElement('button');
+            markerElement.type = 'button';
+            markerElement.className = 'atlas-marker-pin atlas-pin-' + point.status;
+            markerElement.textContent = point.symbol;
+            markerElement.setAttribute(
+              'aria-label',
+              point.service + ': ' + statusLabels[point.status] + ' example for ' + point.area
+            );
+
+            const popup = new maplibre.Popup({ offset: 24, closeButton: true })
+              .setDOMContent(createPopupContent(point));
+
+            new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
+              .setLngLat(point.position)
+              .setPopup(popup)
+              .addTo(map);
+          });
+        });
+
+        map.on('error', () => {
+          if (!mapLoaded && !cancelled) setMapStatus('unavailable');
+        });
+      } catch (error) {
+        setMapStatus('unavailable');
+      }
+    };
+
+    window.addEventListener('maplibre-ready', initializeMap);
+    window.addEventListener('maplibre-failed', handleMapFailure);
+
+    if (window.maplibregl) {
+      initializeMap();
+    } else if (window.__MAPLIBRE_LOAD_STATE === 'error') {
       setMapStatus('unavailable');
     }
 
     return () => {
+      cancelled = true;
+      window.removeEventListener('maplibre-ready', initializeMap);
+      window.removeEventListener('maplibre-failed', handleMapFailure);
       if (map) map.remove();
     };
   }, []);

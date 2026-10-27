@@ -10,7 +10,17 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.15.0/dist/maplibre-gl.css" />
-    <script defer src="https://unpkg.com/maplibre-gl@6.15.0/dist/maplibre-gl.js"></script>
+    <script type="module">
+      try {
+        const maplibreModule = await import('https://unpkg.com/maplibre-gl@6.15.0/dist/maplibre-gl.mjs');
+        window.maplibregl = maplibreModule;
+        window.__MAPLIBRE_LOAD_STATE = 'ready';
+        window.dispatchEvent(new Event('maplibre-ready'));
+      } catch (error) {
+        window.__MAPLIBRE_LOAD_STATE = 'error';
+        window.dispatchEvent(new Event('maplibre-failed'));
+      }
+    </script>
     <title>Fallback Atlas — Know what still works</title>
   </head>
   <body>
