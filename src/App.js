@@ -332,36 +332,133 @@ function App() {
     }
   }
 
-  function submitReport(event) {
+  async function submitReport(event) {
     event.preventDefault();
+    if (reportSubmitting) return;
+
     const reportArea = formArea.trim() || area;
-    const report = {
-      id: 'local-' + Date.now(),
+    const preset = findLocalArea(reportArea);
+    let reportCenter = null;
+    if (preset) reportCenter = preset.center;
+    else if (reportArea.toLowerCase() === mapLocationLabel.trim().toLowerCase()) reportCenter = mapCenter;
+
+    const payload = {
       area: reportArea,
       service: formService,
       status: formStatus,
       note: formNote.trim() || 'Community status report.',
-      time: 'Just now · saved on this device',
-      demo: false
+      observedAt: new Date().toISOString(),
+      ...(reportCenter ? { latitude: reportCenter[1], longitude: reportCenter[0] } : {})
     };
-    const preset = findLocalArea(reportArea);
-    setReports((current) => [report, ...current]);
-    setArea(report.area);
-    if (preset) {
-      setMapLocationLabel(preset.label);
-      setMapCenter(preset.center);
-      setMapZoom(preset.zoom);
-      setShowDemoMarkers(true);
-    } else if (reportArea.toLowerCase() !== mapLocationLabel.toLowerCase()) {
-      setShowDemoMarkers(false);
+
+    setReportSubmitting(true);
+    let fallbackMessage = 'Shared reporting is unavailable. Your report was saved on this device only and has not been shared.';
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      let result = {};
+      try { result = await response.json(); } catch (error) { result = {}; }
+
+      if (!response.ok || !result.report) {
+        if (result.error === 'storage_not_configured') {
+          setApiMode('local');
+          fallbackMessage = 'Shared storage is not configured yet. Your report is saved locally and is pending sync; other visitors cannot see it yet.';
+        } else if (response.status === 429) {
+          fallbackMessage = 'The area has received many reports recently. Your report is saved locally and is pending sync; it has not been shared.';
+        } else {
+          setApiMode('unavailable');
+          fallbackMessage = 'The shared API is temporarily unavailable. Your report is saved locally and is pending sync; it has not been shared.';
+        }
+        throw new Error(fallbackMessage);
+      }
+
+      const sharedReport = {
+        ...result.report,
+        shared: true,
+        demo: false,
+        time: result.report.observedAt || result.report.createdAt
+      };
+      setSharedReports((current) => [sharedReport, ...current.filter((item) => item.id !== sharedReport.id)]);
+      setApiMode('shared');
+      setMessage('Report shared with other visitors. It is community-reported and has not been independently verified.');
+    } catch (error) {
+      const localReport = {
+        ...payload,
+        id: 'local-' + Date.now(),
+        createdAt: new Date().toISOString(),
+        time: 'Just now · saved on this device',
+        demo: false,
+        shared: false,
+        syncStatus: 'pending'
+      };
+      setReports((current) => [localReport, ...current]);
+      setMessage(fallbackMessage);
+    } finally {
+      setReportSubmitting(false);
+      setArea(reportArea);
+      if (preset) {
+        setMapLocationLabel(preset.label);
+        setMapCenter(preset.center);
+        setMapZoom(preset.zoom);
+        setShowDemoMarkers(true);
+      } else if (reportArea.toLowerCase() !== mapLocationLabel.trim().toLowerCase()) {
+        setShowDemoMarkers(false);
+      }
+      setActiveView('feed');
+      setActiveFilter('All updates');
+      setReportOpen(false);
+      setFormNote('');
     }
-    setActiveView('feed');
-    setActiveFilter('All updates');
-    setReportOpen(false);
-    setFormNote('');
-    setMessage(preset
-      ? 'Report saved on this device only. It has not been sent to a server.'
-      : 'Report saved on this device only. Reports are not uploaded or shared with other visitors.');
+  }
+
+  async function syncPendingReports() {
+    if (syncingPending || pendingReports.length === 0 || apiMode !== 'shared') return;
+    setSyncingPending(true);
+    let synced = 0;
+
+    try {
+      for (const pending of pendingReports) {
+        const payload = {
+          area: pending.area,
+          service: pending.service,
+          status: pending.status,
+          note: pending.note || '',
+          observedAt: pending.observedAt || pending.createdAt || new Date().toISOString(),
+          ...(Number.isFinite(Number(pending.latitude)) && Number.isFinite(Number(pending.longitude))
+            ? { latitude: Number(pending.latitude), longitude: Number(pending.longitude) }
+            : {})
+        };
+        const response = await fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || !result.report) break;
+
+        const sharedReport = {
+          ...result.report,
+          shared: true,
+          demo: false,
+          time: result.report.observedAt || result.report.createdAt
+        };
+        setSharedReports((current) => [sharedReport, ...current.filter((item) => item.id !== sharedReport.id)]);
+        setReports((current) => current.filter((item) => item.id !== pending.id));
+        synced += 1;
+      }
+      setMessage(
+        synced > 0
+          ? synced + ' pending report(s) shared successfully. These remain community reports, not official verification.'
+          : 'No pending reports were synchronized. Check the connection and shared storage status.'
+      );
+    } catch (error) {
+      setMessage('Sync interrupted. Remaining reports are still stored on this device and have not been shared.');
+    } finally {
+      setSyncingPending(false);
+    }
   }
 
   return (
