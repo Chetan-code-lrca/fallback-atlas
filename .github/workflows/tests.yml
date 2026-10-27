@@ -23,5 +23,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Run frontend tests
         run: npm test -- --watchAll=false --runInBand
+      - name: Build production frontend
+        run: npm run build
       - name: Run Azure Functions API unit tests
         run: node --test api/test/*.test.js

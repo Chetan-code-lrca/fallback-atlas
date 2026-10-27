@@ -1,87 +1,97 @@
 # Fallback Atlas
 
-**Know what still works.** Fallback Atlas is an open-source prototype exploring how communities can share local information about power, mobile data and fixed broadband during disruptions.
+**Know what still works.** Fallback Atlas is an open-source, community-powered web app for reporting recent availability of mobile data, fixed broadband and power during disruptions.
 
-> **Current stage: prototype.** Map markers and sample summaries are illustrative only, not live network measurements. Reports from the form are saved only in the current browser. They are not uploaded, shared with other visitors, or verified.
+> **Pilot status:** the app has a real serverless reporting API and shared-storage integration code. Shared reports are enabled only after the Azure Storage connection string is configured in the Static Web App. Until then, submissions are saved locally and clearly marked as not shared. Udaipur sample markers are examples, never live network measurements.
 
-[![Azure Static Web Apps](https://img.shields.io/badge/hosting-Azure%20Static%20Web%20Apps-0078D4)](https://azure.microsoft.com/products/app-service/static)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+## What is implemented
 
-## What works today
+- Global place search, an interactive MapLibre map, OpenFreeMap basemap and OpenStreetMap attribution.
+- Location-aware map markers for reports with coordinates.
+- Three infrastructure types, three statuses, report validation, timestamps and freshness labels.
+- Azure Functions managed API routes: `GET /api/health`, `GET /api/reports`, and `POST /api/reports`.
+- Azure Table Storage adapter with a 30-day query window, area normalization, coordinate-radius search, basic flood protection and input validation.
+- Browser-local fallback and a pending-report queue when the API is not configured or unavailable.
+- **Offline app shell:** after one successful online visit and service-worker installation, the site can reopen and the report form can queue a report locally. Map tiles and global place search still require internet.
+- Manual refresh for shared reports; the app rechecks the API when the browser returns online.
+- Automated frontend and API utility tests in GitHub Actions.
 
-- Responsive dashboard for mobile data, fixed broadband and power.
-- Interactive MapLibre map centered on Udaipur, with curated presets for Udaipur City, Fatehpura, Hiran Magri and Pratap Nagar.
-- MapLibre GL JS and the OpenFreeMap Liberty style, using OpenStreetMap-derived map data.
-- Clickable, clearly labelled illustrative markers.
-- Search worldwide for places indexed in OpenStreetMap, including mapped cities, neighbourhoods and postcodes.
-- Local report form, category filters and browser-local persistence.
-- No device GPS request; privacy reminders discourage personal details.
-- Automatic deployment from the `main` branch through GitHub Actions.
+## Architecture
 
-## Technology
+```mermaid
+flowchart TD
+  U[Classmate / community member] --> P[React PWA]
+  P --> M[MapLibre GL JS]
+  M --> T[OpenFreeMap style and map tiles]
+  P --> G[OpenStreetMap Nominatim search]
+  P -->|same-origin /api requests| F[Azure Static Web Apps managed Functions]
+  F --> V[Validate, normalize, rate-limit]
+  V --> D[Azure Table Storage: Reports]
+  P --> L[Local browser queue]
+  L -->|sync when online| F
+```
 
-| Layer | Choice | Notes |
+## Technology and open-source projects
+
+| Layer | Project | Role |
 | --- | --- | --- |
-| Frontend | React + Create React App | Existing scaffold; migrate to a maintained build tool later |
-| Interactive map | MapLibre GL JS | Loaded as a browser ES module |
-| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |
-| Geocoding | OpenStreetMap Nominatim | On-submit search, local caching and per-tab throttling; low-volume pilot only |
-| Hosting | Azure Static Web Apps Free | No Azure backend resources currently required |
-| CI/CD | GitHub Actions | Deploys static frontend on push |
-| Tests | React Testing Library + Jest | Runs in a separate GitHub Actions workflow |
+| UI | [React](https://github.com/facebook/react) | Component-based web interface |
+| Maps | [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) | Open-source interactive vector map renderer |
+| Basemap | [OpenFreeMap](https://github.com/hyperknot/openfreemap) | Public vector-tile/style service; no API key for this pilot |
+| Place search | [Nominatim](https://github.com/osm-search/Nominatim) + [OpenStreetMap data](https://www.openstreetmap.org/copyright) | User-submitted global location search; usage limits and attribution apply |
+| Serverless API | [Azure Functions JavaScript SDK](https://github.com/Azure/azure-functions-nodejs-library) | HTTP API on the existing Static Web App |
+| Storage SDK | [Azure Data Tables](https://github.com/Azure/azure-sdk-for-js/tree/main/sdk/tables/data-tables) | Persist shared reports |
+| Tests | [Testing Library](https://github.com/testing-library/react-testing-library), Jest and Node's test runner | Check user flows and server-side validation |
+| Crowdsourcing inspiration | [Ushahidi Platform](https://github.com/ushahidi/platform) | Reference for incident collection and mapped reports; not bundled into this app |
+
+We avoid adding libraries without a clear role. Each open-source project has a specific purpose in the stack.
 
 ## Run locally
 
-Requirements: Node.js and npm.
+Requirements: Node.js 22 or a compatible version and npm.
 
 ```bash
 npm install
 npm start
 ```
 
-Run the frontend tests:
+Run tests and the production build:
 
 ```bash
 npm test -- --watchAll=false --runInBand
-```
-
-Build for production:
-
-```bash
+node --test api/test/*.test.js
 npm run build
 ```
 
-## Limitations
+## Enable shared reports in Azure
 
-- **No shared backend:** reports are stored in the current browser only.
-- **No live outage data:** sample markers and statuses are not from utilities or verified users.
-- **Geocoding is best-effort:** Nominatim searches places indexed in OpenStreetMap. Results may be missing or ambiguous; submitted queries go to the configured provider and are cached in this browser.
-- **No offline map or upload queue:** map tiles require connectivity and reports are never synchronized.
-- **No freshness/confidence calculation:** these need a trustworthy shared dataset first.
-- **Public map service dependency:** OpenFreeMap offers a free public instance, but availability is not guaranteed by this project. Keep the provider replaceable.
+The existing GitHub workflow is configured to deploy the root `api/` folder as managed Functions. **Do not create a separate Function App or App Service for this HTTP-only pilot.**
+
+1. In `rg-fallback-atlas-dev`, create one Azure Storage account using Standard / General-purpose v2 / locally redundant storage.
+2. The API creates the `Reports` Table Storage table on first use.
+3. In `swa-fallback-atlas-dev`, open **Configuration / Environment variables** and add `REPORTS_STORAGE_CONNECTION_STRING`. Put the Storage account connection string in the value field; never commit it to GitHub or React code.
+4. Save, then open `/api/health` on the live website. Shared mode is ready when the response says `"mode":"shared"`.
+5. Submit a test report, open the same site on a second device/browser, search the same area and press **Refresh**. The report should appear.
+
+See [API setup](api/README.md), [cost and governance](docs/COST_AND_GOVERNANCE.md), [class demo guide](docs/CLASS_DEMO_GUIDE.md) and [architecture](docs/ARCHITECTURE.md).
+
+**Cost note:** Static Web Apps Free includes managed Functions APIs within plan limits. Azure Table Storage is billed separately according to storage and transactions and consumes Azure for Students credit. Do not treat it as free; keep the data small, deallocate the workshop VM and monitor Cost Management. If you cannot accept any additional Azure usage, leave the backend unconfigured and keep local-only mode.
+
+## Safety and data limitations
+
+- Reports are community-submitted, not official utility telemetry.
+- Evidence freshness is a signal, not proof of correctness or independent verification.
+- No account, phone number, name or browser geolocation is required.
+- Nominatim's public service is rate-limited at the application level (maximum one request per second) and suitable only for moderate, user-triggered search. Browser cache cannot enforce a global rate limit for all visitors. Read the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
+- Offline mode caches only the same-origin app shell. Map tiles, geocoding and shared reports still require an internet connection.
 
 ## Roadmap
 
-1. Validate the prototype with a small Udaipur campus/hostel usability test.
-2. Build a shared reporting API and database using a suitable free tier; avoid extra Azure resources until needed.
-3. Add timestamps, expiry, freshness and confidence labels so stale reports are not mistaken for current conditions.
-4. Add input validation, rate limiting, moderation, abuse prevention and retention rules before public submissions.
-5. Add an offline report queue with safe synchronization.
-6. Migrate away from the deprecated Create React App scaffold and update dependencies after testing.
-7. Before a wider public launch, add a shared cache/rate-limit proxy or switch to a provider suitable for expected traffic.
+1. Configure shared storage and test across two devices.
+2. Run a 5–8 person campus/hostel usability study using the pilot plan.
+3. Add report expiry/retention cleanup and moderation before a wider public launch.
+4. Add shared geocoding caching/rate limiting if traffic grows.
 
-## Privacy and safety
+## Attribution and license
 
-The prototype does not request browser geolocation, call a live network-status API or upload submitted reports. Location search sends the submitted place query to the configured geocoding provider. Results are cached in this browser for 30 days; do not submit sensitive or personal addresses. Do not enter personal information. Do not rely on demo data for emergency, travel or safety decisions.
-
-## Map attribution and usage
-
-The map uses OpenFreeMap's public style and OpenStreetMap-derived data. Worldwide text search uses the configured Nominatim Search API endpoint in `public/geocoder-config.js`. Keep the attribution displayed by the map style and search form. Nominatim's public service has an absolute maximum of 1 request per second per application, requires application identification and attribution, and allows user-triggered searches for moderate traffic only. This prototype submits only when the form is submitted and caches results locally, but browser-side throttling cannot enforce a global rate limit across all visitors. Do not use this direct public endpoint for a high-traffic launch; add a shared server-side cache/rate limiter or select another provider first. Review the [OpenFreeMap quick start](https://openfreemap.org/quick_start/), [OpenFreeMap terms](https://openfreemap.org/terms/) and [OpenStreetMap copyright](https://www.openstreetmap.org/copyright) and [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/). Do not add bulk tile downloads or prefetching without checking the provider's terms.
-
-## Contributing and security
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Map rendering uses MapLibre GL JS (BSD-3-Clause), OpenFreeMap (MIT software) and OpenStreetMap data (ODbL). Nominatim's public server usage policy still applies. The Fallback Atlas application is released under the MIT License; see [LICENSE](LICENSE).

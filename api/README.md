@@ -4,17 +4,17 @@ This is the HTTP-only Azure Functions API managed by Azure Static Web Apps.
 
 ## Endpoints
 
-- \`GET /api/health\` — reports whether shared storage is configured.
-- \`GET /api/reports?area=Udaipur%2C%20Rajasthan&latitude=24.58&longitude=73.68&radiusKm=10\` — recent reports in the selected area or radius.
-- \`POST /api/reports\` — validates and stores a community report.
+- `GET /api/health` — reports whether shared storage is configured.
+- `GET /api/reports?area=Udaipur%2C%20Rajasthan&latitude=24.58&longitude=73.68&radiusKm=10` — recent reports in the selected area or radius.
+- `POST /api/reports` — validates and stores a community report.
 
 ## Storage configuration
 
-The API uses Azure Table Storage table \`Reports\`. The API creates the table when it first connects.
+The API uses Azure Table Storage table `Reports`. The API creates the table when it first connects.
 
 Add one application setting to the Static Web App:
 
-- **Name:** \`REPORTS_STORAGE_CONNECTION_STRING\`
+- **Name:** `REPORTS_STORAGE_CONNECTION_STRING`
 - **Value:** the storage account connection string from Azure Portal → Storage account → Security + networking → Access keys.
 
 Never put the connection string in GitHub, React environment variables, screenshots, or browser code. If this setting is absent, the API deliberately stays in local-only mode.
