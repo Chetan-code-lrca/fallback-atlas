@@ -108,30 +108,33 @@ test('reports are saved locally and marked pending when shared storage is not co
 });
 
 test('successful API submission becomes a shared report with freshness metadata', async () => {
+  let storedSharedReport = null;
   global.fetch.mockImplementation((url, options) => {
     if (url === '/api/health') {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: 'ok', mode: 'shared' }) });
     }
     if (options && options.method === 'POST') {
+      storedSharedReport = {
+        id: 'shared-123',
+        area: 'Udaipur, Rajasthan',
+        service: 'Power',
+        status: 'working',
+        note: 'Power restored near campus.',
+        createdAt: new Date().toISOString(),
+        observedAt: new Date().toISOString(),
+        shared: true
+      };
       return Promise.resolve({
         ok: true,
         status: 201,
-        json: async () => ({
-          mode: 'shared',
-          report: {
-            id: 'shared-123',
-            area: 'Udaipur, Rajasthan',
-            service: 'Power',
-            status: 'working',
-            note: 'Power restored near campus.',
-            createdAt: new Date().toISOString(),
-            observedAt: new Date().toISOString(),
-            shared: true
-          }
-        })
+        json: async () => ({ mode: 'shared', report: storedSharedReport })
       });
     }
-    return Promise.resolve({ ok: true, status: 200, json: async () => ({ mode: 'shared', reports: [] }) });
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ mode: 'shared', reports: storedSharedReport ? [storedSharedReport] : [] })
+    });
   });
 
   const { container } = render(<App />);
