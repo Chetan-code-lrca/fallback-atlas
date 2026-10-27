@@ -9,6 +9,7 @@ const {
   toApiReport,
   validateReportInput
 } = require('./report-utils');
+const { validateWifiScanInput, toApiWifiScan } = require('./wifi-scan-utils');
 
 const TABLE_NAME = 'Reports';
 const REPORTS_PARTITION = 'reports';
@@ -250,6 +251,197 @@ app.http('reports', {
           error: 'write_failed',
           message: 'The report was not shared because the storage service is unavailable.'
         });
+      }
+    }
+
+    return response(405, { error: 'method_not_allowed' });
+  }
+});
+
+
+const WIFI_SCAN_TABLE_NAME = 'WifiScans';
+const WIFI_SCAN_PARTITION = 'wifi-scans';
+const WIFI_SCAN_RETENTION_MS = 15 * 60 * 1000;
+const WIFI_SCAN_MAX_ROWS = 1000;
+const WIFI_SCAN_MAX_ROWS_PER_AREA_WINDOW = 250;
+let wifiScanTableClientPromise;
+
+function getWifiScanTableClient() {
+  const connectionString = process.env.REPORTS_STORAGE_CONNECTION_STRING;
+  if (!connectionString) {
+    const error = new Error('Shared Wi-Fi scan storage has not been configured.');
+    error.code = 'STORAGE_NOT_CONFIGURED';
+    throw error;
+  }
+  if (!wifiScanTableClientPromise) {
+    wifiScanTableClientPromise = TableClient.fromConnectionString(connectionString, WIFI_SCAN_TABLE_NAME)
+      .createTable()
+      .then(() => TableClient.fromConnectionString(connectionString, WIFI_SCAN_TABLE_NAME))
+      .catch(async (error) => {
+        if (error.statusCode === 409 || error.code === 'TableAlreadyExists') {
+          return TableClient.fromConnectionString(connectionString, WIFI_SCAN_TABLE_NAME);
+        }
+        wifiScanTableClientPromise = undefined;
+        throw error;
+      });
+  }
+  return wifiScanTableClientPromise;
+}
+
+async function loadRecentWifiScans(table) {
+  const cutoffIso = new Date(Date.now() - WIFI_SCAN_RETENTION_MS).toISOString();
+  const filter = "PartitionKey eq '" + WIFI_SCAN_PARTITION + "' and createdAt ge '" + cutoffIso + "'";
+  const rows = [];
+  for await (const entity of table.listEntities({ queryOptions: { filter } })) {
+    rows.push(toApiWifiScan(entity));
+    if (rows.length >= WIFI_SCAN_MAX_ROWS) break;
+  }
+  return rows;
+}
+
+async function countRecentWifiScanRows(table, areaKey) {
+  const cutoffIso = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+  const filter = "PartitionKey eq '" + WIFI_SCAN_PARTITION +
+    "' and areaKey eq '" + areaKey +
+    "' and createdAt ge '" + cutoffIso + "'";
+  let count = 0;
+  for await (const entity of table.listEntities({ queryOptions: { filter } })) {
+    count += 1;
+    if (count >= WIFI_SCAN_MAX_ROWS_PER_AREA_WINDOW) return count;
+  }
+  return count;
+}
+
+app.http('wifi-scans', {
+  methods: ['GET', 'POST'],
+  authLevel: 'anonymous',
+  route: 'wifi-scans',
+  handler: async (request, context) => {
+    let table;
+    try {
+      table = await getWifiScanTableClient();
+    } catch (error) {
+      if (error.code === 'STORAGE_NOT_CONFIGURED') {
+        return response(503, {
+          error: 'storage_not_configured',
+          message: 'Shared Wi-Fi observations are not configured. Nothing has been uploaded.'
+        });
+      }
+      context.error('Fallback Atlas could not connect to Wi-Fi scan storage.');
+      return response(503, { error: 'storage_unavailable', message: 'Shared Wi-Fi observations are temporarily unavailable.' });
+    }
+
+    if (request.method === 'GET') {
+      const params = new URL(request.url).searchParams;
+      const coords = parseCoordinates(params);
+      if (!coords || coords.error) {
+        return response(400, {
+          error: 'invalid_coordinates',
+          message: coords && coords.error ? coords.error : 'Latitude and longitude are required to search nearby scans.'
+        });
+      }
+      const requestedRadius = Number(params.get('radiusKm') || 1);
+      const radiusKm = Number.isFinite(requestedRadius) ? Math.min(5, Math.max(1, requestedRadius)) : 1;
+
+      let rows;
+      try {
+        rows = await loadRecentWifiScans(table);
+      } catch (error) {
+        context.error('Fallback Atlas failed to query Wi-Fi scan observations.');
+        return response(503, { error: 'query_failed', message: 'Nearby Wi-Fi observations could not be loaded.' });
+      }
+
+      const now = Date.now();
+      const nearby = rows.filter((row) =>
+        Number.isFinite(row.latitude) &&
+        Number.isFinite(row.longitude) &&
+        haversineKm(coords.latitude, coords.longitude, row.latitude, row.longitude) <= radiusKm &&
+        Number.isFinite(Date.parse(row.observedAt)) &&
+        now - Date.parse(row.observedAt) <= WIFI_SCAN_RETENTION_MS
+      ).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt));
+
+      const grouped = new Map();
+      for (const row of nearby) {
+        const key = row.networkName.toLocaleLowerCase('en') + '|' + row.frequencyMhz;
+        const current = grouped.get(key);
+        if (!current) {
+          grouped.set(key, { ...row, observations: 1 });
+        } else {
+          current.observations += 1;
+          if (Date.parse(row.observedAt) > Date.parse(current.observedAt)) {
+            const observations = current.observations;
+            Object.assign(current, row, { observations });
+          }
+          if (row.signalDbm > current.signalDbm) current.strongestSignalDbm = row.signalDbm;
+        }
+      }
+
+      return response(200, {
+        mode: 'shared',
+        radiusKm,
+        freshnessMinutes: 15,
+        observationCount: nearby.length,
+        networks: Array.from(grouped.values()).sort((a, b) => b.signalDbm - a.signalDbm)
+      });
+    }
+
+    if (request.method === 'POST') {
+      let input;
+      try {
+        input = await request.json();
+      } catch (error) {
+        return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
+      }
+
+      const validation = validateWifiScanInput(input);
+      if (!validation.ok) {
+        return response(400, { error: 'invalid_scan', message: validation.error });
+      }
+
+      const { value } = validation;
+      try {
+        const recentRows = await countRecentWifiScanRows(table, value.areaKey);
+        if (recentRows + value.networks.length > WIFI_SCAN_MAX_ROWS_PER_AREA_WINDOW) {
+          return response(429, {
+            error: 'scan_rate_limit',
+            message: 'Too many scan observations were submitted for this area recently. Please retry later.'
+          });
+        }
+
+        const now = new Date();
+        const entities = value.networks.map((network) => {
+          const id = crypto.randomUUID();
+          const entity = {
+            partitionKey: WIFI_SCAN_PARTITION,
+            rowKey: reverseTimestampKey(now.getTime(), id),
+            id,
+            area: value.area,
+            areaKey: value.areaKey,
+            networkName: network.networkName,
+            signalDbm: network.signalDbm,
+            frequencyMhz: network.frequencyMhz,
+            security: network.security,
+            latitude: value.latitude,
+            longitude: value.longitude,
+            createdAt: now.toISOString(),
+            observedAt: network.observedAt
+          };
+          return { action: 'create', entity };
+        });
+
+        await table.submitTransaction(entities);
+        return response(201, {
+          mode: 'shared',
+          accepted: entities.length,
+          message: 'The selected Wi-Fi scan observations were shared without device identifiers or access-point MAC addresses.'
+        });
+      } catch (error) {
+        if (error.statusCode === 409) {
+          context.error('A duplicate Wi-Fi scan entity was rejected.');
+          return response(409, { error: 'duplicate_scan', message: 'This scan was already submitted. Refresh the scan and retry.' });
+        }
+        context.error('Fallback Atlas failed to save Wi-Fi scan observations.');
+        return response(503, { error: 'write_failed', message: 'The scan was not shared because storage was unavailable.' });
       }
     }
 
