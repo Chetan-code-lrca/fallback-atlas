@@ -86,7 +86,7 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
 
 test('reports are saved locally and marked pending when shared storage is not configured', async () => {
   const { container } = render(<App />);
-  fireEvent.click(buttonContaining(container, 'Report status'));
+  fireEvent.click(buttonContaining(container, 'Share a report'));
   fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
     target: { value: 'Hiran Magri, Udaipur' }
   });
@@ -138,7 +138,7 @@ test('successful API submission becomes a shared report with freshness metadata'
   });
 
   const { container } = render(<App />);
-  fireEvent.click(buttonContaining(container, 'Report status'));
+  fireEvent.click(buttonContaining(container, 'Share a report'));
   fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
     target: { value: 'Udaipur, Rajasthan' }
   });
@@ -161,7 +161,7 @@ test('successful API submission becomes a shared report with freshness metadata'
 
 test('service filters only show reports from the selected category', async () => {
   const { container } = render(<App />);
-  fireEvent.click(buttonContaining(container, 'Report status'));
+  fireEvent.click(buttonContaining(container, 'Share a report'));
   fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
     target: { value: 'Fatehpura, Udaipur' }
   });
