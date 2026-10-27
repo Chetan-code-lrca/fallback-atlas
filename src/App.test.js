@@ -58,9 +58,9 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   });
 
   const { container } = render(<App />);
+  submitLocation(container, 'Osaka, Japan');
   await act(async () => {
-    submitLocation(container, 'Osaka, Japan');
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 
   expect(geocodeLocation).toHaveBeenCalledWith('Osaka, Japan');
