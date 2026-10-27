@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
 import { geocodeLocation } from './geocoding';
@@ -137,6 +137,7 @@ function App() {
   const [searchStatus, setSearchStatus] = useState('idle');
   const [searchValue, setSearchValue] = useState('');
   const [sharedReports, setSharedReports] = useState([]);
+  const sharedReportsVersion = useRef(0);
   const [apiMode, setApiMode] = useState('checking');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [syncingPending, setSyncingPending] = useState(false);
@@ -194,6 +195,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     async function loadSharedReports() {
+      const requestVersion = sharedReportsVersion.current;
       const params = new URLSearchParams();
       params.set('area', area);
       params.set('latitude', String(mapCenter[1]));
@@ -205,7 +207,7 @@ function App() {
           headers: { Accept: 'application/json' }
         });
         const payload = await response.json();
-        if (cancelled) return;
+        if (cancelled || requestVersion !== sharedReportsVersion.current) return;
 
         if (!response.ok) {
           setSharedReports([]);
@@ -381,6 +383,7 @@ function App() {
         demo: false,
         time: result.report.observedAt || result.report.createdAt
       };
+      sharedReportsVersion.current += 1;
       setSharedReports((current) => [sharedReport, ...current.filter((item) => item.id !== sharedReport.id)]);
       setApiMode('shared');
       setMessage('Report shared with other visitors. It is community-reported and has not been independently verified.');
@@ -445,6 +448,7 @@ function App() {
           demo: false,
           time: result.report.observedAt || result.report.createdAt
         };
+        sharedReportsVersion.current += 1;
         setSharedReports((current) => [sharedReport, ...current.filter((item) => item.id !== sharedReport.id)]);
         setReports((current) => current.filter((item) => item.id !== pending.id));
         synced += 1;
