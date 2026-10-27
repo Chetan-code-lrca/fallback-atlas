@@ -359,3 +359,18 @@ a { color: inherit; text-decoration: none; }
     margin-left: 20px;
   }
 }
+
+/* Class-demo usability: explicit report refresh and offline state */
+.updates-heading-actions { display:flex; align-items:center; gap:8px; }
+.refresh-button {
+  display:inline-flex; align-items:center; gap:5px; min-height:30px; padding:0 8px;
+  border:1px solid #dce7eb; border-radius:8px; color:#506777; background:#fff;
+  font-size:9px; font-weight:750; white-space:nowrap;
+}
+.refresh-button:hover,.refresh-button:focus-visible {
+  border-color:#93c8c4; color:#087e80; background:#f3fbfa;
+}
+@media (max-width:480px) {
+  .updates-heading-actions { gap:5px; }
+  .refresh-button { padding:0 6px; font-size:8px; }
+}

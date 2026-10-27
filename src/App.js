@@ -138,6 +138,8 @@ function App() {
   const [searchValue, setSearchValue] = useState('');
   const [sharedReports, setSharedReports] = useState([]);
   const sharedReportsVersion = useRef(0);
+  const [reportRefreshToken, setReportRefreshToken] = useState(0);
+  const [browserOnline, setBrowserOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [apiMode, setApiMode] = useState('checking');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [syncingPending, setSyncingPending] = useState(false);
@@ -176,20 +178,39 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    async function checkApi() {
+    async function checkApi(refreshReports = false) {
       try {
         const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
         const health = await response.json();
         if (cancelled) return;
-        if (response.ok && health.mode === 'shared') setApiMode('shared');
-        else if (health.mode === 'local') setApiMode('local');
-        else setApiMode('unavailable');
+        if (response.ok && health.mode === 'shared') {
+          setApiMode('shared');
+          if (refreshReports) setReportRefreshToken((current) => current + 1);
+        } else if (health.mode === 'local') {
+          setApiMode('local');
+        } else {
+          setApiMode('unavailable');
+        }
       } catch (error) {
         if (!cancelled) setApiMode('unavailable');
       }
     }
+    const handleOnline = () => {
+      setBrowserOnline(true);
+      checkApi(true);
+    };
+    const handleOffline = () => {
+      setBrowserOnline(false);
+      setApiMode('unavailable');
+    };
     checkApi();
-    return () => { cancelled = true; };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -235,7 +256,7 @@ function App() {
     }
     loadSharedReports();
     return () => { cancelled = true; };
-  }, [area, mapCenter]);
+  }, [area, mapCenter, reportRefreshToken]);
 
   const selectedArea = area.trim().toLowerCase();
   const selectedAreaPreset = findLocalArea(area);
@@ -511,17 +532,20 @@ function App() {
           <span className="api-status-dot" />
           <div className="api-status-copy">
             <strong>
-              {apiMode === 'shared' ? 'Shared reporting is online' :
-                apiMode === 'checking' ? 'Checking report service…' :
-                  apiMode === 'local' ? 'Local-only mode — storage setup still needed' :
-                    'Shared report service unavailable'}
+              {!browserOnline ? 'Offline mode — reports stay on this device' :
+                apiMode === 'shared' ? 'Shared reporting is online' :
+                  apiMode === 'checking' ? 'Checking report service…' :
+                    apiMode === 'local' ? 'Local-only mode — storage setup still needed' :
+                      'Shared report service unavailable'}
             </strong>
             <small>
-              {apiMode === 'shared'
-                ? 'New reports can be seen by other visitors. Reports are still community-submitted, not independently verified.'
-                : pendingReports.length
-                  ? pendingReports.length + ' report(s) are pending sync and remain on this device only.'
-                  : 'Until shared storage is connected, test reports stay in this browser and are not visible to classmates.'}
+              {!browserOnline
+                ? 'The app shell and local report form can work after the first online visit. Map tiles and location search need internet; queued reports have not been shared yet.'
+                : apiMode === 'shared'
+                  ? 'New reports can be seen by other visitors. Reports are still community-submitted, not independently verified.'
+                  : pendingReports.length
+                    ? pendingReports.length + ' report(s) are pending sync and remain on this device only.'
+                    : 'Until shared storage is connected, test reports stay in this browser and are not visible to classmates.'}
             </small>
           </div>
           {apiMode === 'shared' && pendingReports.length > 0 && (
@@ -558,7 +582,10 @@ function App() {
           <aside className="panel updates-panel">
             <div className="panel-heading updates-heading">
               <div><span className="section-kicker">COMMUNITY PULSE</span><h3>Recent reports</h3></div>
-              <span className="count-bubble">{areaReports.length}</span>
+              <div className="updates-heading-actions">
+                <button className="refresh-button" type="button" onClick={() => setReportRefreshToken((current) => current + 1)} aria-label="Refresh community reports" title="Fetch the latest reports">↻ Refresh</button>
+                <span className="count-bubble" aria-label={areaReports.length + ' visible reports'}>{areaReports.length}</span>
+              </div>
             </div>
             <div className="filter-row" aria-label="Filter reports">
               {['All updates', ...serviceOptions].map((filter) => <button key={filter} className={'filter-chip' + (activeFilter === filter ? ' active' : '')} onClick={() => setActiveFilter(filter)}>{filter}</button>)}
@@ -601,7 +628,7 @@ function App() {
         </section>
       </main>
 
-      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Open-source prototype · Built for community resilience</span><span className="footer-status"><i /> {apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
+      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Open-source prototype · Built for community resilience</span><span className="footer-status"><i /> {!browserOnline ? 'Offline · local queue available' : apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
 
       {reportOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
         <section className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
