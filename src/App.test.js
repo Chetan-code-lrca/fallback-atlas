@@ -11,11 +11,13 @@ beforeEach(() => {
   delete window.__MAPLIBRE_LOAD_STATE;
   window.FALLBACK_ATLAS_CONFIG = { geocoderUrl: 'https://nominatim.openstreetmap.org/search' };
   global.fetch = jest.fn();
+  window.fetch = global.fetch;
 });
 
 afterEach(() => {
   cleanup();
   global.fetch = originalFetch;
+  window.fetch = originalFetch;
 });
 
 function buttonContaining(container, text) {
@@ -73,6 +75,7 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
 
   const { container } = render(<App />);
   await submitLocationAndWait(container, 'Osaka, Japan');
+  expect(global.fetch).toHaveBeenCalledTimes(1);
   expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan');
 
   expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Osaka, Japan');
