@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
+import { geocodeLocation } from './geocoding';
 
 const demoReports = [
   { id: 'demo-1', area: 'Fatehpura, Udaipur', service: 'Mobile data', status: 'degraded', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
@@ -45,7 +46,7 @@ const UDAIPUR_AREAS = [
   {
     id: 'udaipur',
     label: 'Udaipur, Rajasthan',
-    aliases: ['udaipur', 'rajasthan'],
+    aliases: ['udaipur'],
     matchTerms: ['udaipur', 'fatehpura', 'hiran magri', 'hiranmagri', 'pratap nagar', 'surajpole', 'hathipole'],
     center: [73.685806, 24.582285],
     zoom: 12
@@ -96,6 +97,8 @@ function App() {
   const [mapLocationLabel, setMapLocationLabel] = useState('Udaipur, Rajasthan');
   const [mapCenter, setMapCenter] = useState([73.685806, 24.582285]);
   const [mapZoom, setMapZoom] = useState(12);
+  const [showDemoMarkers, setShowDemoMarkers] = useState(true);
+  const [searchStatus, setSearchStatus] = useState('idle');
   const [searchValue, setSearchValue] = useState('');
   const [activeView, setActiveView] = useState('map');
   const [activeFilter, setActiveFilter] = useState('All updates');
@@ -130,17 +133,14 @@ function App() {
     }
   }, [reports]);
 
-  const visibleReports = useMemo(() => {
-    if (activeFilter === 'All updates') return reports;
-    return reports.filter((report) => report.service === activeFilter);
-  }, [reports, activeFilter]);
-
-  const localReports = reports.filter((report) => !report.demo);
   const selectedArea = area.trim().toLowerCase();
   const selectedAreaPreset = findLocalArea(area);
   const areaReports = reports.filter((report) => {
     const reportArea = String(report.area || '').trim().toLowerCase();
-    if (selectedAreaPreset?.id === 'udaipur') {
+
+    if (!showDemoMarkers) return reportArea === selectedArea;
+
+    if (selectedAreaPreset && selectedAreaPreset.id === 'udaipur') {
       return report.demo || selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
     }
     if (selectedAreaPreset) {
@@ -148,33 +148,66 @@ function App() {
     }
     return reportArea === selectedArea;
   });
+
+  const visibleReports = useMemo(() => (
+    activeFilter === 'All updates'
+      ? areaReports
+      : areaReports.filter((report) => report.service === activeFilter)
+  ), [areaReports, activeFilter]);
+  const localReports = areaReports.filter((report) => !report.demo);
   const counts = areaReports.reduce((total, report) => {
-    if (Object.prototype.hasOwnProperty.call(total, report.status)) {
-      total[report.status] += 1;
-    }
+    if (Object.prototype.hasOwnProperty.call(total, report.status)) total[report.status] += 1;
     return total;
   }, { working: 0, degraded: 0, down: 0 });
   const hasSampleReports = areaReports.some((report) => report.demo);
 
-  function searchArea(event) {
+  async function searchArea(event) {
     event.preventDefault();
     const value = searchValue.trim();
-    if (!value) return;
+    if (!value || searchStatus === 'loading') return;
+
+    if (value.length > 160) {
+      setMessage('Please enter a shorter place name or address (160 characters maximum).');
+      return;
+    }
 
     const preset = findLocalArea(value);
-    if (!preset) {
-      setMessage('No map preset for "' + value + '" yet. Try Udaipur, Fatehpura, Hiran Magri, Pratap Nagar or Udaipur City. No external geocoding API is used.');
+    if (preset) {
+      setArea(preset.label);
+      setFormArea(preset.label);
+      setMapLocationLabel(preset.label);
+      setMapCenter(preset.center);
+      setMapZoom(preset.zoom);
+      setShowDemoMarkers(true);
+      setMessage('Map moved to ' + preset.label + '. The sample markers are illustrative, not verified live service reports.');
       setSearchValue('');
       return;
     }
 
-    setArea(preset.label);
-    setFormArea(preset.label);
-    setMapLocationLabel(preset.label);
-    setMapCenter(preset.center);
-    setMapZoom(preset.zoom);
-    setMessage('Map moved to ' + preset.label + '. All example markers are illustrative, not verified live service reports.');
-    setSearchValue('');
+    setSearchStatus('loading');
+    setMessage('Searching for "' + value + '"…');
+    try {
+      const result = await geocodeLocation(value);
+      if (!result) {
+        setMessage('No matching location found for "' + value + '". Try adding a city, state, or country.');
+        return;
+      }
+
+      setArea(result.label);
+      setFormArea(result.label);
+      setMapLocationLabel(result.label);
+      setMapCenter(result.center);
+      setMapZoom(result.zoom);
+      setShowDemoMarkers(false);
+      setMessage('Map centered on ' + result.label + '. No verified outage reports are available here yet; Udaipur demo markers are hidden.');
+    } catch (error) {
+      setMessage(error && error.message
+        ? error.message
+        : 'Location search is temporarily unavailable. Please try again later.');
+    } finally {
+      setSearchStatus('idle');
+      setSearchValue('');
+    }
   }
 
   function submitReport(event) {
@@ -196,6 +229,9 @@ function App() {
       setMapLocationLabel(preset.label);
       setMapCenter(preset.center);
       setMapZoom(preset.zoom);
+      setShowDemoMarkers(true);
+    } else if (reportArea.toLowerCase() !== mapLocationLabel.toLowerCase()) {
+      setShowDemoMarkers(false);
     }
     setActiveView('feed');
     setActiveFilter('All updates');
@@ -203,7 +239,7 @@ function App() {
     setFormNote('');
     setMessage(preset
       ? 'Report saved on this device only. It has not been sent to a server.'
-      : 'Report saved on this device only. The map stays centered on ' + mapLocationLabel + ' because this area has no map preset yet.');
+      : 'Report saved on this device only. Reports are not uploaded or shared with other visitors.');
   }
 
   return (
@@ -231,10 +267,10 @@ function App() {
             <form className="search-form" onSubmit={searchArea}>
               <span className="search-icon" aria-hidden="true">⌕</span>
               <label className="visually-hidden" htmlFor="area-search">Search area or PIN code</label>
-              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Udaipur, Fatehpura, Hiran Magri…" />
-              <button className="button button-teal" type="submit">Set area</button>
+              <input id="area-search" value={searchValue} onChange={(event) => setSearchValue(event.target.value)} placeholder="Any city, neighbourhood, postcode or address…" maxLength={160} />
+              <button className="button button-teal" type="submit" disabled={searchStatus === 'loading'}>{searchStatus === 'loading' ? 'Searching…' : 'Find location'}</button>
             </form>
-            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Search supports a few Udaipur area presets only; no external geocoder or API is used.</div>
+            <div className="hero-footnote"><span aria-hidden="true">⌖</span> Search locations worldwide. Searches run only when submitted and are cached in this browser. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">Search data © OpenStreetMap contributors</a>.</div>
           </div>
           <div className="hero-art" aria-hidden="true">
             <div className="orbit orbit-one" />
@@ -266,16 +302,16 @@ function App() {
           <div className="panel map-panel">
             <div className="panel-heading">
               <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · {mapLocationLabel}</h3></div>
-              <span className="preview-label">ILLUSTRATIVE VIEW</span>
+              <span className="preview-label">{showDemoMarkers ? 'DEMO MARKERS' : 'LOCATION VIEW'}</span>
             </div>
-            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} />
-            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>Pan and zoom the map. Markers are illustrative examples, not verified live reports; device GPS is not used.</span></div>
+            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} />
+            <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>{showDemoMarkers ? 'Sample markers are shown only for the Udaipur prototype. They are not verified live reports.' : 'No sample markers are shown for this searched location. Reports appear only when matching reports exist.'} Map by <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · data © OpenStreetMap contributors.</span></div>
           </div>
 
           <aside className="panel updates-panel">
             <div className="panel-heading updates-heading">
               <div><span className="section-kicker">COMMUNITY PULSE</span><h3>Recent reports</h3></div>
-              <span className="count-bubble">{reports.length}</span>
+              <span className="count-bubble">{areaReports.length}</span>
             </div>
             <div className="filter-row" aria-label="Filter reports">
               {['All updates', ...serviceOptions].map((filter) => <button key={filter} className={'filter-chip' + (activeFilter === filter ? ' active' : '')} onClick={() => setActiveFilter(filter)}>{filter}</button>)}
@@ -285,16 +321,22 @@ function App() {
               <button role="tab" aria-selected={activeView === 'feed'} className={activeView === 'feed' ? 'selected' : ''} onClick={() => setActiveView('feed')}>Report feed <span>{localReports.length > 0 ? localReports.length : ''}</span></button>
             </div>
             {activeView === 'map' && <div className="service-status-list">
-              <div className="service-status-item"><ServiceIcon service="Mobile data" /><div className="service-status-main"><strong>Mobile data</strong><small>Demo · Fatehpura</small></div><StatusPill status="degraded" /></div>
-              <div className="service-status-item"><ServiceIcon service="Fixed broadband" /><div className="service-status-main"><strong>Fixed broadband</strong><small>Demo · Udaipur City</small></div><StatusPill status="working" /></div>
-              <div className="service-status-item"><ServiceIcon service="Power" /><div className="service-status-main"><strong>Power</strong><small>Demo · Hiran Magri</small></div><StatusPill status="down" /></div>
-              <div className="confidence-note"><span>↗</span><div><strong>Confidence & freshness</strong><small>Evidence scoring will be added with the reporting API.</small></div></div>
+              {areaReports.length === 0 ? (
+                <div className="empty-state"><span>⌁</span><strong>No reports for this location yet</strong><p>Try another area or add a local test report. Reports are not shared with other visitors in this prototype.</p></div>
+              ) : areaReports.slice(0, 5).map((report) => (
+                <div className="service-status-item" key={report.id}>
+                  <ServiceIcon service={report.service} />
+                  <div className="service-status-main"><strong>{report.service}</strong><small>{report.area} · {report.demo ? 'Demo only' : 'Local browser report'}</small></div>
+                  <StatusPill status={report.status} />
+                </div>
+              ))}
+              <div className="confidence-note"><span>↗</span><div><strong>Confidence & freshness</strong><small>{hasSampleReports ? 'Sample data is illustrative, not verified.' : 'Freshness and confidence need a shared reporting API.'}</small></div></div>
             </div>}
             {activeView === 'feed' && <div className="report-feed">
               {visibleReports.length === 0 ? <div className="empty-state"><span>⌁</span><strong>No reports in this filter</strong><p>Try a different service or submit a local example.</p></div> : visibleReports.map((report) => <article className="feed-item" key={report.id}><div className="feed-item-top"><strong>{report.service}</strong><StatusPill status={report.status} /></div><span className="feed-area">⌖ {report.area}</span><p>{report.note}</p><small>{report.time}{report.demo ? ' · demo' : ' · local only'}</small></article>)}
             </div>}
             <button className="button button-outline full-button" onClick={() => { setFormArea(area); setReportOpen(true); }}><span>＋</span> Add a community report</button>
-            <p className="panel-disclaimer">Local prototype only · reports aren't shared with other people yet.</p>
+            <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}Local prototype only · reports are saved in this browser and are not shared.</p>
           </aside>
         </section>
 
