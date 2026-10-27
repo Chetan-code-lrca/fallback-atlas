@@ -102,7 +102,7 @@ export async function geocodeLocation(query, fetchImpl) {
   const cached = cache[cacheKey];
   if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) return cached.location;
 
-  await waitForRequestSlot();
+  if (!fetchImpl) await waitForRequestSlot();
   const params = [
     ['q', normalized],
     ['format', 'jsonv2'],
