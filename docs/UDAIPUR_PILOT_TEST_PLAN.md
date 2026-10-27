@@ -1,47 +1,51 @@
-# Udaipur Pilot Test Plan
+# Udaipur pilot test plan
 
 ## Purpose
 
-Test whether the prototype is understandable and useful for students who need to make decisions during a power or connectivity disruption. This is a usability test, not a live outage-monitoring trial.
+Evaluate whether students can use Fallback Atlas to understand recent community reports about power, mobile data and fixed broadband. This is a usability test, not a live outage-monitoring trial.
 
-## Important limitation
+## Important limitations
 
-Reports are saved only in the submitter's browser. They are not shared with other students, so the current release cannot yet test whether community reports help a different person. Every map marker/status is demo data; never use it to make a real safety decision.
+- The map base is real; demo markers are illustrative.
+- Shared-report tests require `/api/health` to return `mode=shared`.
+- Reports are not official utility data and are not independently verified.
+- Do not collect names, phone numbers, exact home addresses or device locations.
 
 ## Automated checks
 
-The `Prototype tests` GitHub Actions workflow runs the frontend tests on pushes and pull requests.
+GitHub Actions runs frontend tests, API utility tests and the production build.
 
-## Manual test checklist
+## Manual checks
 
-| ID | Test | Steps | Pass condition |
+| ID | Test | Pass condition |
 | --- | --- | --- |
-| UDA-01 | Default location | Open the live site in a fresh/private browser tab | Snapshot and map label show Udaipur, Rajasthan |
-| UDA-02 | Area presets | Search for Udaipur, Fatehpura, Hiran Magri, Pratap Nagar and Udaipur City | Each supported name updates the title and recenters the map |
-| UDA-03 | Unsupported search | Search a PIN code or unrelated place | App explains that arbitrary geocoding is not connected; it does not pretend the map moved |
-| UDA-04 | Demo disclosure | Click each map marker | Popup clearly identifies the status as demo/example data |
-| UDA-05 | Report form | Submit a test report for mobile data, fixed broadband and power | Status, service and area appear in the local feed |
-| UDA-06 | Browser persistence | Refresh the same browser after submitting a local report | That browser still shows the report; another browser is not expected to see it |
-| UDA-07 | Service filters | Select each service filter in the report feed | Only reports for the chosen service are listed |
-| UDA-08 | Privacy | Use the app without granting location permissions | App remains usable and does not request device GPS |
-| UDA-09 | Mobile layout | Test at a narrow mobile viewport | Search, map, report dialog and filters remain usable without horizontal overflow |
+| UDA-01 | Default location | Dashboard starts in Udaipur, Rajasthan |
+| UDA-02 | Global area search | Search another city; map recenters and Udaipur demo markers disappear |
+| UDA-03 | Report form | Service/status/area are validated and shown |
+| UDA-04 | Shared report | With storage configured, a report appears from a second browser after refreshing |
+| UDA-05 | Local fallback | Without shared storage, report is labelled local/pending sync, never claimed as shared |
+| UDA-06 | Freshness | Report shows its observation age; stale reports are not described as fresh |
+| UDA-07 | Offline shell | After first online use, app shell opens offline; map tiles are unavailable |
+| UDA-08 | Offline report | Submission stays local/pending offline and can be synced when the API returns |
+| UDA-09 | Filters | Each service filter shows only matching reports |
+| UDA-10 | Privacy | App does not request browser geolocation or require personal identifiers |
 
 ## Small campus usability study
 
-Ask 5–8 volunteers from the college/hostel community to try the prototype individually. Do not collect names, phone numbers, exact home addresses or device location.
+Ask 5–8 volunteers to use the prototype in separate sessions:
 
-1. Ask each person to find a Udaipur area on the map.
-2. Ask them to explain what a demo status means and whether it is verified.
-3. Ask them to submit a clearly labelled test report and find it again.
-4. Ask: 'During an outage, what decision would this help you make?'
-5. Ask: 'Would you trust a report more if it showed age, number of independent reports and verification status?'
-6. Record only task success, confusion points and anonymous feedback.
+1. Find a location and explain what the markers mean.
+2. Distinguish demo data from shared community reports.
+3. Submit a test report and refresh from a second browser if shared mode is enabled.
+4. Explain what decision the information might support.
+5. Explain what evidence they'd need before trusting the report.
 
-## Proposed initial success criteria
+Record task success and anonymous feedback only.
 
-- At least 4 of 5 testers can find a supported area without help.
-- All testers understand that current markers/statuses are not live or verified.
-- At least 3 of 5 can describe a concrete outage decision this tool might support.
-- No tester believes a report submitted in this build was shared with other users.
+## Proposed success criteria
 
-If users do not see a clear use case, revise the idea before paying for or deploying a backend. If they do, the next milestone is a shared, moderated report API with expiry/freshness metadata.
+- At least 4 of 5 testers can find a location without help.
+- Every tester understands demo data is not live status.
+- At least 4 of 5 can submit a report or correctly explain why it remained local.
+- At least 3 of 5 describe a concrete decision the project could support.
+- No tester mistakes a community report for an official utility confirmation.
