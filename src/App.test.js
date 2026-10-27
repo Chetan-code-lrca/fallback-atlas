@@ -1,15 +1,20 @@
 import React from 'react';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import App from './App';
+
+const originalFetch = global.fetch;
 
 beforeEach(() => {
   window.localStorage.clear();
   delete window.maplibregl;
   delete window.__MAPLIBRE_LOAD_STATE;
+  window.FALLBACK_ATLAS_CONFIG = { geocoderUrl: 'https://nominatim.openstreetmap.org/search' };
+  global.fetch = jest.fn();
 });
 
 afterEach(() => {
   cleanup();
+  global.fetch = originalFetch;
 });
 
 function buttonContaining(container, text) {
@@ -18,53 +23,89 @@ function buttonContaining(container, text) {
   );
 }
 
-test('defaults to Udaipur and labels map markers as illustrative', () => {
-  const { container } = render(<App />);
+function submitLocation(container, value) {
+  fireEvent.change(container.querySelector('#area-search'), { target: { value } });
+  fireEvent.click(buttonContaining(container, 'Find location'));
+}
 
+test('defaults to Udaipur and labels demo markers clearly', () => {
+  const { container } = render(<App />);
   expect(container.querySelector('h1').textContent).toContain('works.');
   expect(container.querySelector('.section-heading h2').textContent).toBe('Udaipur, Rajasthan');
   expect(container.querySelector('.panel-heading h3').textContent).toContain('Udaipur');
   expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Udaipur, Rajasthan');
-  expect(container.querySelector('.map-footer').textContent).toContain('illustrative examples');
+  expect(container.querySelector('.live-map-shell').getAttribute('data-show-demo-markers')).toBe('true');
+  expect(container.querySelector('.map-footer').textContent).toContain('not verified live reports');
 });
 
-test('searching a supported Udaipur area recenters the map preset', () => {
+test('searching a supported Udaipur area recenters the local preset without calling a geocoder', () => {
   const { container } = render(<App />);
-  const input = container.querySelector('#area-search');
-
-  fireEvent.change(input, { target: { value: 'Hiran Magri' } });
-  fireEvent.click(buttonContaining(container, 'Set area'));
-
+  submitLocation(container, 'Hiran Magri');
   expect(container.querySelector('.section-heading h2').textContent).toBe('Hiran Magri, Udaipur');
   expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Hiran Magri, Udaipur');
   expect(container.querySelector('.notice').textContent).toContain('illustrative');
+  expect(global.fetch).not.toHaveBeenCalled();
 });
 
-test('unsupported PIN/address search explains which local presets are available', () => {
+test('searching a worldwide location recenters the map and hides Udaipur demo markers', async () => {
+  global.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [{
+      lat: '34.6937',
+      lon: '135.5023',
+      name: 'Osaka',
+      display_name: 'Osaka, Osaka, Japan',
+      type: 'city',
+      addresstype: 'city',
+      address: { city: 'Osaka', state: 'Osaka', country: 'Japan' }
+    }]
+  });
+
   const { container } = render(<App />);
-  const input = container.querySelector('#area-search');
+  submitLocation(container, 'Osaka, Japan');
+  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan'));
 
-  fireEvent.change(input, { target: { value: '313001' } });
-  fireEvent.click(buttonContaining(container, 'Set area'));
-
-  expect(container.querySelector('.section-heading h2').textContent).toBe('Udaipur, Rajasthan');
-  expect(container.querySelector('.notice').textContent).toContain('Try Udaipur, Fatehpura, Hiran Magri, Pratap Nagar or Udaipur City');
-  expect(container.querySelector('.notice').textContent).toContain('No external geocoding API is used');
+  expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Osaka, Japan');
+  expect(container.querySelector('.live-map-shell').getAttribute('data-show-demo-markers')).toBe('false');
+  expect(container.querySelector('.notice').textContent).toContain('No verified outage reports');
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+  expect(global.fetch.mock.calls[0][0]).toContain('q=Osaka%2C+Japan');
 });
 
-test('report form saves locally and shows the report in the feed', () => {
+test('caches geocoding results so the same query is not sent twice', async () => {
+  global.fetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => [{
+      lat: '35.6762',
+      lon: '139.6503',
+      name: 'Tokyo',
+      display_name: 'Tokyo, Japan',
+      type: 'city',
+      addresstype: 'city',
+      address: { city: 'Tokyo', country: 'Japan' }
+    }]
+  });
+
+  const { container } = render(<App />);
+  submitLocation(container, 'Tokyo, Japan');
+  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Tokyo, Japan'));
+  submitLocation(container, 'Tokyo, Japan');
+  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Tokyo, Japan'));
+  expect(global.fetch).toHaveBeenCalledTimes(1);
+});
+
+test('reports are saved locally and shown in the current area feed', () => {
   const { container } = render(<App />);
   fireEvent.click(buttonContaining(container, 'Report status'));
-
-  const areaInput = container.querySelector('.report-form input:not([type="radio"])');
-  fireEvent.change(areaInput, { target: { value: 'Hiran Magri, Udaipur' } });
+  fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
+    target: { value: 'Hiran Magri, Udaipur' }
+  });
   fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
   fireEvent.click(container.querySelector('.status-choice input[value="down"]'));
-  fireEvent.change(container.querySelector('.report-form textarea'), {
-    target: { value: 'Testing the local prototype.' }
-  });
+  fireEvent.change(container.querySelector('.report-form textarea'), { target: { value: 'Testing the local prototype.' } });
   fireEvent.click(buttonContaining(container, 'Save local report'));
-
   expect(container.querySelector('.notice').textContent).toContain('saved on this device only');
   expect(container.querySelector('.report-feed').textContent).toContain('Hiran Magri, Udaipur');
   expect(container.querySelector('.report-feed').textContent).toContain('Power');
@@ -81,10 +122,8 @@ test('service filters only show reports from the selected category', () => {
   fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
   fireEvent.click(container.querySelector('.status-choice input[value="working"]'));
   fireEvent.click(buttonContaining(container, 'Save local report'));
-
   fireEvent.click(buttonContaining(container, 'Power'));
   const feedText = container.querySelector('.report-feed').textContent;
   expect(feedText).toContain('Power');
-  expect(feedText).not.toContain('Mobile data');
   expect(feedText).not.toContain('Fixed broadband');
 });

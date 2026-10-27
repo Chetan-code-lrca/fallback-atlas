@@ -1,78 +1,79 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const MAP_CENTER = [73.685806, 24.582285];
+const UDAIPUR_CENTER = [73.685806, 24.582285];
 
 const sampleMarkers = [
-  {
-    position: [73.685575, 24.614134],
-    area: 'Fatehpura',
-    service: 'Mobile data',
-    status: 'degraded',
-    symbol: '≈'
-  },
-  {
-    position: [73.685806, 24.582285],
-    area: 'Udaipur City',
-    service: 'Fixed broadband',
-    status: 'working',
-    symbol: '✓'
-  },
-  {
-    position: [73.655799, 24.536711],
-    area: 'Hiran Magri',
-    service: 'Power',
-    status: 'down',
-    symbol: '!'
-  }
+  { position: [73.685575, 24.614134], area: 'Fatehpura', service: 'Mobile data', status: 'degraded', symbol: '≈' },
+  { position: [73.685806, 24.582285], area: 'Udaipur City', service: 'Fixed broadband', status: 'working', symbol: '✓' },
+  { position: [73.655799, 24.536711], area: 'Hiran Magri', service: 'Power', status: 'down', symbol: '!' }
 ];
 
-const statusLabels = {
-  working: 'Working',
-  degraded: 'Degraded',
-  down: 'Down'
-};
+const statusLabels = { working: 'Working', degraded: 'Degraded', down: 'Down' };
 
 function createPopupContent(point) {
   const content = document.createElement('div');
   content.className = 'atlas-map-popup';
-
   const title = document.createElement('strong');
   title.textContent = point.service + ' · ' + statusLabels[point.status];
-
   const area = document.createElement('p');
   area.textContent = point.area;
-
   const disclaimer = document.createElement('small');
   disclaimer.textContent = 'DEMO ONLY — illustrative marker, not a verified live report.';
-
   content.append(title, area, disclaimer);
   return content;
 }
 
-function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, Rajasthan' }) {
+function addSampleMarkers(map, maplibre, markerRefs) {
+  sampleMarkers.forEach((point) => {
+    const markerElement = document.createElement('button');
+    markerElement.type = 'button';
+    markerElement.className = 'atlas-marker-pin atlas-pin-' + point.status;
+    markerElement.textContent = point.symbol;
+    markerElement.setAttribute(
+      'aria-label',
+      point.service + ': ' + statusLabels[point.status] + ' example for ' + point.area
+    );
+
+    const popup = new maplibre.Popup({ offset: 24, closeButton: true })
+      .setDOMContent(createPopupContent(point));
+    const marker = new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
+      .setLngLat(point.position)
+      .setPopup(popup)
+      .addTo(map);
+    markerRefs.current.push(marker);
+  });
+}
+
+function InteractiveMap({
+  center = UDAIPUR_CENTER,
+  zoom = 12,
+  areaLabel = 'Udaipur, Rajasthan',
+  showDemoMarkers = true
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const initialCenterRef = useRef(center);
   const initialZoomRef = useRef(zoom);
+  const markerRefs = useRef([]);
+  const mapLoadedRef = useRef(false);
+  const showDemoMarkersRef = useRef(showDemoMarkers);
   const [mapStatus, setMapStatus] = useState('loading');
+  showDemoMarkersRef.current = showDemoMarkers;
 
   useEffect(() => {
     const container = containerRef.current;
     let map;
-    let mapLoaded = false;
     let cancelled = false;
 
     const handleMapFailure = () => {
-      setMapStatus('unavailable');
+      if (!cancelled) setMapStatus('unavailable');
     };
 
     const initializeMap = () => {
       const maplibre = window.maplibregl;
       if (cancelled || map || !container) return;
       if (!maplibre) {
-        if (window.__MAPLIBRE_LOAD_STATE === 'error') {
-          setMapStatus('unavailable');
-        }
+        if (window.__MAPLIBRE_LOAD_STATE === 'error') setMapStatus('unavailable');
         return;
       }
 
@@ -82,7 +83,7 @@ function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, 
           style: 'https://tiles.openfreemap.org/styles/liberty',
           center: initialCenterRef.current,
           zoom: initialZoomRef.current,
-          minZoom: 3,
+          minZoom: 2,
           maxZoom: 18,
           scrollZoom: false,
           cooperativeGestures: true,
@@ -90,79 +91,66 @@ function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, 
           pitchWithRotate: false,
           dragRotate: false
         });
-
-        map.addControl(
-          new maplibre.NavigationControl({ showCompass: false }),
-          'top-right'
-        );
-        map.addControl(
-          new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }),
-          'bottom-left'
-        );
+        mapRef.current = map;
+        map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
+        map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
 
         map.on('load', () => {
-          mapLoaded = true;
+          mapLoadedRef.current = true;
           if (!cancelled) setMapStatus('ready');
-
-          sampleMarkers.forEach((point) => {
-            const markerElement = document.createElement('button');
-            markerElement.type = 'button';
-            markerElement.className = 'atlas-marker-pin atlas-pin-' + point.status;
-            markerElement.textContent = point.symbol;
-            markerElement.setAttribute(
-              'aria-label',
-              point.service + ': ' + statusLabels[point.status] + ' example for ' + point.area
-            );
-
-            const popup = new maplibre.Popup({ offset: 24, closeButton: true })
-              .setDOMContent(createPopupContent(point));
-
-            new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
-              .setLngLat(point.position)
-              .setPopup(popup)
-              .addTo(map);
-          });
+          markerRefs.current.forEach((marker) => marker.remove());
+          markerRefs.current = [];
+          if (showDemoMarkersRef.current) addSampleMarkers(map, maplibre, markerRefs);
         });
 
         map.on('error', () => {
-          if (!mapLoaded && !cancelled) setMapStatus('unavailable');
+          if (!cancelled && !mapLoadedRef.current) setMapStatus('unavailable');
         });
       } catch (error) {
-        setMapStatus('unavailable');
+        if (!cancelled) setMapStatus('unavailable');
       }
     };
 
     window.addEventListener('maplibre-ready', initializeMap);
     window.addEventListener('maplibre-failed', handleMapFailure);
-
-    if (window.maplibregl) {
-      initializeMap();
-    } else if (window.__MAPLIBRE_LOAD_STATE === 'error') {
-      setMapStatus('unavailable');
-    }
+    if (window.maplibregl) initializeMap();
+    else if (window.__MAPLIBRE_LOAD_STATE === 'error') setMapStatus('unavailable');
 
     return () => {
       cancelled = true;
       window.removeEventListener('maplibre-ready', initializeMap);
       window.removeEventListener('maplibre-failed', handleMapFailure);
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
+      mapLoadedRef.current = false;
       if (map) map.remove();
       if (mapRef.current === map) mapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (mapRef.current && Array.isArray(center) && center.length === 2) {
-      mapRef.current.flyTo({ center, zoom, duration: 550 });
+    const map = mapRef.current;
+    if (map && Array.isArray(center) && center.length === 2) {
+      map.flyTo({ center, zoom, duration: 550 });
     }
   }, [center, zoom]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current || !window.maplibregl) return;
+    markerRefs.current.forEach((marker) => marker.remove());
+    markerRefs.current = [];
+    if (showDemoMarkers) addSampleMarkers(map, window.maplibregl, markerRefs);
+  }, [showDemoMarkers]);
+
   return (
-    <div className="live-map-shell">
+    <div className="live-map-shell" data-show-demo-markers={showDemoMarkers ? 'true' : 'false'}>
       <div
         ref={containerRef}
         className="live-map"
         role="application"
-        aria-label={"Interactive map centered on " + areaLabel + " with illustrative demo markers"}
+        aria-label={'Interactive map centered on ' + areaLabel +
+          (showDemoMarkers ? ' with illustrative demo markers' : ' without sample markers')}
       />
       {mapStatus !== 'ready' && (
         <div className="map-status-overlay" role="status">
@@ -172,11 +160,11 @@ function InteractiveMap({ center = MAP_CENTER, zoom = 12, areaLabel = 'Udaipur, 
             <span>
               The map could not load. Check your connection or{' '}
               <a
-                href="https://www.openstreetmap.org/#map=12/24.5823/73.6858"
+                href={'https://www.openstreetmap.org/#map=12/' + center[1] + '/' + center[0]}
                 target="_blank"
                 rel="noreferrer"
               >
-                open Udaipur in OpenStreetMap
+                open this location in OpenStreetMap
               </a>.
             </span>
           )}

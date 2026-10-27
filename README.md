@@ -13,7 +13,7 @@
 - Interactive MapLibre map centered on Udaipur, with curated presets for Udaipur City, Fatehpura, Hiran Magri and Pratap Nagar.
 - MapLibre GL JS and the OpenFreeMap Liberty style, using OpenStreetMap-derived map data.
 - Clickable, clearly labelled illustrative markers.
-- Search for supported local presets without a paid geocoding API.
+- Search worldwide for places indexed in OpenStreetMap, including mapped cities, neighbourhoods and postcodes.
 - Local report form, category filters and browser-local persistence.
 - No device GPS request; privacy reminders discourage personal details.
 - Automatic deployment from the `main` branch through GitHub Actions.
@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | Frontend | React + Create React App | Existing scaffold; migrate to a maintained build tool later |
 | Interactive map | MapLibre GL JS | Loaded as a browser ES module |
-| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |
+| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |\n| Geocoding | OpenStreetMap Nominatim | On-submit search, local caching and per-tab throttling; low-volume pilot only |
 | Hosting | Azure Static Web Apps Free | No Azure backend resources currently required |
 | CI/CD | GitHub Actions | Deploys static frontend on push |
 | Tests | React Testing Library + Jest | Runs in a separate GitHub Actions workflow |
@@ -54,7 +54,7 @@ npm run build
 
 - **No shared backend:** reports are stored in the current browser only.
 - **No live outage data:** sample markers and statuses are not from utilities or verified users.
-- **Curated location search only:** supported Udaipur presets recenter the map. Arbitrary PIN-code/address search is not connected to a geocoder.
+- **Geocoding is best-effort:** Nominatim searches places indexed in OpenStreetMap. Results may be missing or ambiguous; submitted queries go to the configured provider and are cached in this browser.
 - **No offline map or upload queue:** map tiles require connectivity and reports are never synchronized.
 - **No freshness/confidence calculation:** these need a trustworthy shared dataset first.
 - **Public map service dependency:** OpenFreeMap offers a free public instance, but availability is not guaranteed by this project. Keep the provider replaceable.
@@ -67,15 +67,15 @@ npm run build
 4. Add input validation, rate limiting, moderation, abuse prevention and retention rules before public submissions.
 5. Add an offline report queue with safe synchronization.
 6. Migrate away from the deprecated Create React App scaffold and update dependencies after testing.
-7. Expand location lookup only after choosing a geocoder with acceptable terms, limits and privacy implications.
+7. Before a wider public launch, add a shared cache/rate-limit proxy or switch to a provider suitable for expected traffic.
 
 ## Privacy and safety
 
-The prototype does not request browser geolocation, call a live network-status API or upload submitted reports. Do not enter personal information. Do not rely on demo data for emergency, travel or safety decisions.
+The prototype does not request browser geolocation, call a live network-status API or upload submitted reports. Location search sends the submitted place query to the configured geocoding provider. Results are cached in this browser for 30 days; do not submit sensitive or personal addresses. Do not enter personal information. Do not rely on demo data for emergency, travel or safety decisions.
 
 ## Map attribution and usage
 
-The map uses OpenFreeMap's public style and OpenStreetMap-derived data. Keep the attribution displayed by the map style. Review the [OpenFreeMap quick start](https://openfreemap.org/quick_start/), [OpenFreeMap terms](https://openfreemap.org/terms/) and [OpenStreetMap copyright](https://www.openstreetmap.org/copyright). Do not add bulk tile downloads or prefetching without checking the provider's terms.
+The map uses OpenFreeMap's public style and OpenStreetMap-derived data. Worldwide text search uses the configured Nominatim Search API endpoint in `public/geocoder-config.js`. Keep the attribution displayed by the map style and search form. Nominatim's public service has an absolute maximum of 1 request per second per application, requires application identification and attribution, and allows user-triggered searches for moderate traffic only. This prototype submits only when the form is submitted and caches results locally, but browser-side throttling cannot enforce a global rate limit across all visitors. Do not use this direct public endpoint for a high-traffic launch; add a shared server-side cache/rate limiter or select another provider first. Review the [OpenFreeMap quick start](https://openfreemap.org/quick_start/), [OpenFreeMap terms](https://openfreemap.org/terms/) and [OpenStreetMap copyright](https://www.openstreetmap.org/copyright) and [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/). Do not add bulk tile downloads or prefetching without checking the provider's terms.
 
 ## Contributing and security
 
