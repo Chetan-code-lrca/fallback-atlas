@@ -72,6 +72,42 @@ const statusOptions = [
   { value: 'down', label: 'Down', hint: 'Not working' }
 ];
 
+
+function observedAtOf(report) {
+  return report.observedAt || report.createdAt || null;
+}
+
+function ageMinutes(report, now = Date.now()) {
+  if (report.demo) return null;
+  const timestamp = Date.parse(observedAtOf(report) || '');
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, (now - timestamp) / 60000);
+}
+
+function timeAgo(report) {
+  if (report.demo) return 'Demo example';
+  const minutes = ageMinutes(report);
+  if (minutes === null) return 'Time unknown';
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return Math.floor(minutes) + ' min ago';
+  if (minutes < 1440) return Math.floor(minutes / 60) + ' hr ago';
+  return Math.floor(minutes / 1440) + ' day(s) ago';
+}
+
+function freshnessLabel(report) {
+  if (report.demo) return 'Sample data';
+  const minutes = ageMinutes(report);
+  if (minutes === null) return 'Time unknown';
+  if (minutes < 15) return 'Fresh';
+  if (minutes < 60) return 'Recent';
+  if (minutes < 360) return 'Aging';
+  return 'Stale';
+}
+
+function freshnessClass(report) {
+  return 'freshness-' + freshnessLabel(report).toLowerCase().replace(/\s+/g, '-');
+}
+
 function SignalMark() {
   return (
     <div className="brand-mark" aria-hidden="true">
@@ -100,6 +136,10 @@ function App() {
   const [showDemoMarkers, setShowDemoMarkers] = useState(true);
   const [searchStatus, setSearchStatus] = useState('idle');
   const [searchValue, setSearchValue] = useState('');
+  const [sharedReports, setSharedReports] = useState([]);
+  const [apiMode, setApiMode] = useState('checking');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [syncingPending, setSyncingPending] = useState(false);
   const [activeView, setActiveView] = useState('map');
   const [activeFilter, setActiveFilter] = useState('All updates');
   const [reportOpen, setReportOpen] = useState(false);
@@ -133,33 +173,115 @@ function App() {
     }
   }, [reports]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function checkApi() {
+      try {
+        const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+        const health = await response.json();
+        if (cancelled) return;
+        if (response.ok && health.mode === 'shared') setApiMode('shared');
+        else if (health.mode === 'local') setApiMode('local');
+        else setApiMode('unavailable');
+      } catch (error) {
+        if (!cancelled) setApiMode('unavailable');
+      }
+    }
+    checkApi();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSharedReports() {
+      const params = new URLSearchParams();
+      params.set('area', area);
+      params.set('latitude', String(mapCenter[1]));
+      params.set('longitude', String(mapCenter[0]));
+      params.set('radiusKm', '10');
+
+      try {
+        const response = await fetch('/api/reports?' + params.toString(), {
+          headers: { Accept: 'application/json' }
+        });
+        const payload = await response.json();
+        if (cancelled) return;
+
+        if (!response.ok) {
+          setSharedReports([]);
+          if (payload.error === 'storage_not_configured') setApiMode('local');
+          else if (response.status === 503) setApiMode('unavailable');
+          return;
+        }
+
+        const loaded = Array.isArray(payload.reports)
+          ? payload.reports.map((report) => ({
+              ...report,
+              shared: true,
+              demo: false,
+              time: report.observedAt || report.createdAt
+            }))
+          : [];
+        setSharedReports(loaded);
+        setApiMode('shared');
+      } catch (error) {
+        if (!cancelled) {
+          setSharedReports([]);
+          setApiMode((current) => current === 'checking' ? 'unavailable' : current);
+        }
+      }
+    }
+    loadSharedReports();
+    return () => { cancelled = true; };
+  }, [area, mapCenter]);
+
   const selectedArea = area.trim().toLowerCase();
   const selectedAreaPreset = findLocalArea(area);
-  const areaReports = reports.filter((report) => {
-    const reportArea = String(report.area || '').trim().toLowerCase();
-
-    if (!showDemoMarkers) return reportArea === selectedArea;
-
-    if (selectedAreaPreset && selectedAreaPreset.id === 'udaipur') {
-      return report.demo || selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
-    }
-    if (selectedAreaPreset) {
-      return selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
-    }
-    return reportArea === selectedArea;
-  });
+  const areaReports = useMemo(() => {
+    const localAndDemoReports = reports.filter((report) => {
+      const reportArea = String(report.area || '').trim().toLowerCase();
+      if (!showDemoMarkers) return reportArea === selectedArea;
+      if (selectedAreaPreset && selectedAreaPreset.id === 'udaipur') {
+        return report.demo || selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
+      }
+      if (selectedAreaPreset) {
+        return selectedAreaPreset.matchTerms.some((term) => reportArea.includes(term));
+      }
+      return reportArea === selectedArea;
+    });
+    const combined = [...localAndDemoReports, ...sharedReports];
+    const seen = new Set();
+    return combined.filter((report) => {
+      if (!report.id || seen.has(report.id)) return false;
+      seen.add(report.id);
+      return true;
+    });
+  }, [reports, sharedReports, selectedArea, selectedAreaPreset, showDemoMarkers]);
 
   const visibleReports = useMemo(() => (
     activeFilter === 'All updates'
       ? areaReports
       : areaReports.filter((report) => report.service === activeFilter)
   ), [areaReports, activeFilter]);
-  const localReports = areaReports.filter((report) => !report.demo);
+  const localReports = areaReports.filter((report) => !report.demo && !report.shared);
+  const pendingReports = reports.filter((report) => !report.demo && !report.shared && report.syncStatus === 'pending');
   const counts = areaReports.reduce((total, report) => {
     if (Object.prototype.hasOwnProperty.call(total, report.status)) total[report.status] += 1;
     return total;
   }, { working: 0, degraded: 0, down: 0 });
   const hasSampleReports = areaReports.some((report) => report.demo);
+  const sharedReportCount = areaReports.filter((report) => report.shared).length;
+  const recentRealReports = areaReports.filter((report) => {
+    const minutes = ageMinutes(report);
+    return !report.demo && minutes !== null && minutes <= 30;
+  });
+  const evidenceSummary = hasSampleReports
+    ? 'Sample data is illustrative; it must not be treated as live service status.'
+    : recentRealReports.length === 0
+      ? 'No reports observed in the last 30 minutes.'
+      : recentRealReports.length < 3
+        ? recentRealReports.length + ' recent community report(s); not enough evidence to corroborate status.'
+        : recentRealReports.length + ' recent community reports. Community evidence is not official utility verification.';
 
   async function searchArea(event) {
     event.preventDefault();
