@@ -32,7 +32,8 @@ function submitLocation(container, value) {
 async function submitLocationAndWait(container, value) {
   await act(async () => {
     submitLocation(container, value);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The submit handler awaits two promises (fetch and response.json) before updating React state.
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
 }
 
