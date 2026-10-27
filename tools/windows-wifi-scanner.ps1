@@ -74,9 +74,14 @@ $observations = @()
 $scanTime = (Get-Date).ToUniversalTime().ToString('o')
 
 function Get-WifiFrequencyMhz([string]$band, [int]$channel) {
-  if ($band -match '2\.4') { if ($channel -eq 14) { return 2484 }; if ($channel -ge 1 -and $channel -le 13) { return 2407 + 5 * $channel } }
-  elseif ($band -match '5') { if ($channel -ge 1 -and $channel -le 200) { return 5000 + 5 * $channel } }
-  elseif ($band -match '6') { if ($channel -ge 1 -and $channel -le 233) { return 5950 + 5 * $channel } }
+  if ($band -match '2\.4') {
+    if ($channel -eq 14) { return 2484 }
+    if ($channel -ge 1 -and $channel -le 13) { return 2407 + 5 * $channel }
+  } elseif ($band -match '5') {
+    if ($channel -ge 1 -and $channel -le 200) { return 5000 + 5 * $channel }
+  } elseif ($band -match '6') {
+    if ($channel -ge 1 -and $channel -le 233) { return 5950 + 5 * $channel }
+  }
   return 0
 }
 
