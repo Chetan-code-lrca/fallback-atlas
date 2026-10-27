@@ -60,6 +60,41 @@ function addSampleMarkers(map, maplibre, markerRefs) {
     markerRefs.current.push(marker);
   });
 }
+function createWifiPopupContent(point) {
+  const content = document.createElement('div');
+  content.className = 'atlas-wifi-popup';
+  const title = document.createElement('strong');
+  title.textContent = point.networkName;
+  const details = document.createElement('p');
+  details.textContent = point.signalDbm + ' dBm · ' + point.frequencyMhz + ' MHz · ' + (point.security || 'security unknown');
+  const area = document.createElement('p');
+  area.textContent = point.area || 'Approximate scan area';
+  const disclaimer = document.createElement('small');
+  disclaimer.textContent = 'Detected by an Android device. Signal strength does not confirm internet availability.';
+  content.append(title, details, area, disclaimer);
+  return content;
+}
+
+function addWifiScanMarkers(map, maplibre, markerRefs, wifiScans) {
+  (Array.isArray(wifiScans) ? wifiScans : []).forEach((point) => {
+    const latitude = Number(point.latitude);
+    const longitude = Number(point.longitude);
+    const signalDbm = Number(point.signalDbm);
+    if (!point.networkName || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+        !Number.isFinite(signalDbm) || signalDbm < -110 || signalDbm > -10) return;
+    const markerElement = document.createElement('button');
+    markerElement.type = 'button';
+    markerElement.className = 'atlas-wifi-pin';
+    markerElement.textContent = '⌁';
+    markerElement.setAttribute('aria-label', 'Observed Wi-Fi network ' + point.networkName + ', signal ' + signalDbm + ' dBm');
+    const popup = new maplibre.Popup({ offset: 24, closeButton: true }).setDOMContent(createWifiPopupContent(point));
+    const marker = new maplibre.Marker({ element: markerElement, anchor: 'bottom' })
+      .setLngLat([longitude, latitude]).setPopup(popup).addTo(map);
+    markerRefs.current.push(marker);
+  });
+}
+
 function addCommunityMarkers(map, maplibre, markerRefs, reports) {
   (Array.isArray(reports) ? reports : []).forEach((report) => {
     if (report.latitude === undefined || report.longitude === undefined) return;
@@ -97,6 +132,7 @@ function InteractiveMap({
   areaLabel = 'Udaipur, Rajasthan',
   showDemoMarkers = true,
   reports = [],
+  wifiScans = [],
   theme = 'light'
 }) {
   const containerRef = useRef(null);
@@ -108,12 +144,14 @@ function InteractiveMap({
   const mapLoadedRef = useRef(false);
   const showDemoMarkersRef = useRef(showDemoMarkers);
   const reportsRef = useRef(reports);
+  const wifiScansRef = useRef(wifiScans);
   const [mapStatus, setMapStatus] = useState('loading');
   initialCenterRef.current = center;
   initialZoomRef.current = zoom;
   initialThemeRef.current = theme;
   showDemoMarkersRef.current = showDemoMarkers;
   reportsRef.current = reports;
+  wifiScansRef.current = wifiScans;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -157,6 +195,7 @@ function InteractiveMap({
           markerRefs.current = [];
           if (showDemoMarkersRef.current) addSampleMarkers(map, maplibre, markerRefs);
           addCommunityMarkers(map, maplibre, markerRefs, reportsRef.current);
+          addWifiScanMarkers(map, maplibre, markerRefs, wifiScansRef.current);
         });
 
         map.on('error', () => {
@@ -204,7 +243,8 @@ function InteractiveMap({
     markerRefs.current = [];
     if (showDemoMarkers) addSampleMarkers(map, window.maplibregl, markerRefs);
     addCommunityMarkers(map, window.maplibregl, markerRefs, reports);
-  }, [showDemoMarkers, reports]);
+    addWifiScanMarkers(map, window.maplibregl, markerRefs, wifiScans);
+  }, [showDemoMarkers, reports, wifiScans]);
 
   return (
     <div className="live-map-shell" data-show-demo-markers={showDemoMarkers ? 'true' : 'false'}>

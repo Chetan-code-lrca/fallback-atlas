@@ -393,3 +393,39 @@ html[data-theme="dark"] .notice{color:#b5e5e4;background:#10282c;border-color:#2
 html[data-theme="dark"] .empty-state,html[data-theme="dark"] .confidence-note,html[data-theme="dark"] .privacy-note,html[data-theme="dark"] .modal-demo-note{color:var(--muted);background:#13232f;border-color:var(--line)}html[data-theme="dark"] .report-form input,html[data-theme="dark"] .report-form select,html[data-theme="dark"] .report-form textarea{color:var(--ink);background:#0f1b25;border-color:#334655}html[data-theme="dark"] .theme-toggle{color:var(--ink);background:#13232f;border-color:#344b5d}html[data-theme="dark"] .map-status-overlay{color:#dbe9ef;background:rgba(16,29,40,.96);border-color:#314a59}html[data-theme="dark"] .map-status-overlay a,html[data-theme="dark"] .map-footer a,html[data-theme="dark"] .speedtest-link{color:#73d9d0}html[data-theme="dark"] .live-map .maplibregl-ctrl-attrib{color:#b3c5d0;background:rgba(16,29,40,.92)}
 @media(max-width:760px){.topbar{gap:10px}.topbar-actions{gap:6px}.theme-toggle{min-height:38px;padding:0 9px;gap:5px;font-size:12px}.theme-toggle>span:first-child{font-size:16px}.top-report{padding:0 11px;font-size:12px}.campus-wifi-panel{padding:19px 16px}.campus-wifi-heading{flex-direction:column}.campus-badge{white-space:normal}.campus-wifi-grid{grid-template-columns:1fr}.wifi-results{min-height:200px}}
 @media(max-width:420px){.brand-copy strong{font-size:17px}.theme-toggle>span:last-child{display:none}.wifi-metrics{gap:6px}.wifi-metrics article{padding:9px}.wifi-metrics span{font-size:10px}}
+
+/* Real Wi-Fi scan feed: no manually typed or guessed SSIDs. */
+.wifi-feed-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:3px 0 15px}
+.wifi-feed-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wifi-feed-controls label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;font-weight:650}
+.wifi-feed-controls select{min-height:40px;padding:0 10px;border:1px solid var(--line);border-radius:9px;color:var(--ink);background:var(--paper);font-size:14px}
+.wifi-feed-empty{padding:18px;border:1px dashed var(--line);border-radius:13px;background:var(--canvas)}
+.wifi-feed-empty strong{display:block;color:var(--ink);font-size:16px;line-height:1.45}
+.wifi-feed-empty p{margin:7px 0 0;color:var(--muted);font-size:14px;line-height:1.65}
+.wifi-feed-warning{border-style:solid;border-color:#d9c394;background:#fff9ee}
+.wifi-feed-summary{margin:3px 0 11px;color:var(--muted);font-size:12px}
+.wifi-network-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.wifi-network-card{display:flex;align-items:flex-start;gap:11px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.wifi-network-symbol{display:grid;place-items:center;flex:0 0 auto;width:38px;height:38px;border-radius:11px;color:var(--teal);background:rgba(8,126,128,.1);font-size:25px}
+.wifi-network-copy{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.wifi-network-copy strong{color:var(--ink);font-size:15px;line-height:1.4;overflow-wrap:anywhere}
+.wifi-network-copy span{color:var(--ink);font-size:12px;line-height:1.45}
+.wifi-network-copy small{color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.wifi-signal-pill{flex:0 0 auto;padding:4px 7px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--canvas);font-size:10px;font-weight:750}
+.wifi-signal-good{color:#207659;background:#eff9f5;border-color:#c3e6d9}.wifi-signal-fair{color:#996719;background:#fff9ed;border-color:#ecd8b4}.wifi-signal-weak{color:#a54445;background:#fff0ef;border-color:#f0cece}
+.wifi-feed-note{margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
+html[data-theme="dark"] .wifi-feed-empty{border-color:var(--line);background:#13222e}
+html[data-theme="dark"] .wifi-feed-warning{border-color:#5e4828;background:#2d2518}
+html[data-theme="dark"] .wifi-network-card{border-color:var(--line);background:var(--paper)}
+html[data-theme="dark"] .wifi-network-symbol{color:#73d9d0;background:#16373d}
+html[data-theme="dark"] .wifi-signal-good{color:#80dfbf;background:#102d26;border-color:#2c5d4d}
+html[data-theme="dark"] .wifi-signal-fair{color:#f0c579;background:#302719;border-color:#5f492a}
+html[data-theme="dark"] .wifi-signal-weak{color:#ff9598;background:#341f24;border-color:#63373e}
+.atlas-wifi-pin{display:grid;place-items:center;width:37px;height:37px;padding:0;border:2px solid #fff;border-radius:12px;color:#fff;background:#27485a;box-shadow:0 3px 12px rgba(15,35,50,.3);font-size:23px;font-weight:800;cursor:pointer}
+.atlas-wifi-pin:hover,.atlas-wifi-pin:focus-visible{outline:3px solid rgba(8,126,128,.28);outline-offset:2px}
+.atlas-wifi-popup{min-width:180px;padding:2px;font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+.atlas-wifi-popup strong{display:block;color:#182a3b;font-size:13px;overflow-wrap:anywhere}
+.atlas-wifi-popup p{margin:6px 0;color:#526777;font-size:11px;line-height:1.5}
+.atlas-wifi-popup small{display:block;max-width:240px;color:#526777;font-size:10px;line-height:1.45}
+html[data-theme="dark"] .wifi-feed-controls select{color:var(--ink);background:var(--paper);border-color:var(--line)}
+@media(max-width:760px){.wifi-network-list{grid-template-columns:1fr}.wifi-feed-controls{width:100%}.wifi-feed-controls .button{flex:1}.wifi-feed-controls label{justify-content:space-between;flex:1}}

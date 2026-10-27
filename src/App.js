@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
 import { geocodeLocation } from './geocoding';
+import WifiScanPanel from './WifiScanPanel';
 
 const demoReports = [
   { id: 'demo-1', area: 'Fatehpura, Udaipur', service: 'Mobile data', status: 'degraded', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
@@ -65,7 +66,7 @@ function findLocalArea(value) {
   ) || null;
 }
 
-const serviceOptions = ['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power'];
+const serviceOptions = ['Mobile data', 'Fixed broadband', 'Power'];
 const statusOptions = [
   { value: 'working', label: 'Working', hint: 'Available as expected' },
   { value: 'degraded', label: 'Degraded', hint: 'Slow or unreliable' },
@@ -136,12 +137,12 @@ function App() {
       return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     } catch (error) { return 'light'; }
   });
-  const [wifiNetwork, setWifiNetwork] = useState('SPSU');
-  const [customWifiNetwork, setCustomWifiNetwork] = useState('');
-  const [wifiChecking, setWifiChecking] = useState(false);
-  const [wifiCheck, setWifiCheck] = useState(null);
   const [locationPending, setLocationPending] = useState(false);
   const [radiusKm, setRadiusKm] = useState(1);
+  const [nearbyAreaReady, setNearbyAreaReady] = useState(false);
+  const [wifiScanRefreshToken, setWifiScanRefreshToken] = useState(0);
+  const [nearbyWifiObservations, setNearbyWifiObservations] = useState([]);
+  const handleWifiObservationsChange = useCallback((next) => setNearbyWifiObservations(next), []);
   const [area, setArea] = useState('Udaipur, Rajasthan');
   const [mapLocationLabel, setMapLocationLabel] = useState('Udaipur, Rajasthan');
   const [mapCenter, setMapCenter] = useState([73.685806, 24.582285]);
@@ -177,7 +178,6 @@ function App() {
   });
   const [formArea, setFormArea] = useState('Udaipur, Rajasthan');
   const [formService, setFormService] = useState('Mobile data');
-  const [formNetworkName, setFormNetworkName] = useState('SPSU');
   const [formStatus, setFormStatus] = useState('degraded');
   const [formNote, setFormNote] = useState('');
   const [message, setMessage] = useState('');
@@ -331,58 +331,13 @@ function App() {
     navigator.geolocation.getCurrentPosition((position) => {
       setMapCenter([position.coords.longitude, position.coords.latitude]);
       setMapZoom(15); setRadiusKm(1); setArea('Within 1 km of you'); setMapLocationLabel('Near you');
-      setFormArea('Within 1 km of you'); setShowDemoMarkers(false);
+      setFormArea('Within 1 km of you'); setShowDemoMarkers(false); setNearbyAreaReady(true);
       setMessage('Showing reports within 1 km of your approximate location. Your location stays in this browser unless you submit a report.');
       setLocationPending(false);
     }, (error) => {
       setMessage(error && error.code === 1 ? 'Location permission was not granted.' : 'Your location could not be determined. You can still search an area manually.');
       setLocationPending(false);
     }, { enableHighAccuracy: false, timeout: 9000, maximumAge: 60000 });
-  }
-
-  async function runWifiCheck() {
-    const selectedNetwork = wifiNetwork === 'Other' ? customWifiNetwork.trim() : wifiNetwork;
-    if (!selectedNetwork) { setMessage('Enter the name of the campus Wi-Fi network first.'); return; }
-    if (wifiChecking) return;
-    setWifiChecking(true); setWifiCheck(null);
-    const responseTimes = [];
-    for (let index = 0; index < 3; index += 1) {
-      const start = window.performance && window.performance.now ? window.performance.now() : Date.now();
-      try {
-        const response = await fetch('/api/health', { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } });
-        if (!response.ok) throw new Error('Endpoint unavailable');
-        await response.json();
-        const end = window.performance && window.performance.now ? window.performance.now() : Date.now();
-        responseTimes.push(Math.max(0, Math.round(end - start)));
-      } catch (error) { /* failed probe */ }
-    }
-    let publicInternetReachable = false;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 3500);
-    try {
-      await fetch('https://connectivitycheck.gstatic.com/generate_204', { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal });
-      publicInternetReachable = true;
-    } catch (error) {
-      publicInternetReachable = false;
-    } finally { window.clearTimeout(timeout); }
-    const successfulProbes = responseTimes.length;
-    const averageLatencyMs = successfulProbes ? Math.round(responseTimes.reduce((sum, n) => sum + n, 0) / successfulProbes) : null;
-    let status = 'working';
-    if (successfulProbes === 0 && !publicInternetReachable) status = 'down';
-    else if (successfulProbes < 3 || !publicInternetReachable || averageLatencyMs > 500) status = 'degraded';
-    setWifiCheck({ networkName: selectedNetwork, status, successfulProbes, totalProbes: 3, averageLatencyMs, publicInternetReachable, checkedAt: new Date().toISOString() });
-    setWifiChecking(false);
-  }
-
-  function shareWifiResult() {
-    if (!wifiCheck) return;
-    setFormArea(area); setFormService('Campus Wi-Fi'); setFormNetworkName(wifiCheck.networkName); setFormStatus(wifiCheck.status);
-    const latency = wifiCheck.averageLatencyMs === null ? 'no successful response-time measurement' : 'average response time ' + wifiCheck.averageLatencyMs + ' ms';
-    const note = 'Browser check on ' + wifiCheck.networkName + ': ' + wifiCheck.successfulProbes + '/' + wifiCheck.totalProbes +
-      ' Azure endpoint checks succeeded; ' + latency + '; public HTTPS test endpoint ' +
-      (wifiCheck.publicInternetReachable ? 'reachable' : 'not reached') + '. This is not a Wi-Fi signal-strength measurement.';
-    setFormNote(note.slice(0, 280)); setReportOpen(true);
-    setMessage('Review the connection check before submitting it. Shared reports may be seen by other visitors.');
   }
 
   async function searchArea(event) {
@@ -403,6 +358,7 @@ function App() {
       setMapCenter(preset.center);
       setMapZoom(preset.zoom);
       setShowDemoMarkers(true);
+      setNearbyAreaReady(true);
       setMessage('Map moved to ' + preset.label + '. The sample markers are illustrative, not verified live service reports.');
       setSearchValue('');
       return;
@@ -423,6 +379,7 @@ function App() {
       setMapCenter(result.center);
       setMapZoom(result.zoom);
       setShowDemoMarkers(false);
+      setNearbyAreaReady(true);
       setMessage('Map centered on ' + result.label + '. No verified outage reports are available here yet; Udaipur demo markers are hidden.');
     } catch (error) {
       setMessage(error && error.message
@@ -439,7 +396,6 @@ function App() {
     if (reportSubmitting) return;
 
     const reportArea = formArea.trim() || area;
-    if (formService === 'Campus Wi-Fi' && !formNetworkName.trim()) { setMessage('Enter the Wi-Fi network name before submitting this report.'); return; }
     const preset = findLocalArea(reportArea);
     let reportCenter = null;
     if (preset) reportCenter = preset.center;
@@ -448,7 +404,6 @@ function App() {
     const payload = {
       area: reportArea,
       service: formService,
-      ...(formService === 'Campus Wi-Fi' ? { networkName: formNetworkName.trim() } : {}),
       status: formStatus,
       note: formNote.trim() || 'Community status report.',
       observedAt: new Date().toISOString(),
@@ -642,37 +597,17 @@ function App() {
           )}
         </div>
 
-        <section className="campus-wifi-panel panel" id="campus-wifi" aria-labelledby="wifi-check-title">
-          <div className="campus-wifi-heading">
-            <div><span className="section-kicker">CAMPUS CONNECTIVITY</span><h2 id="wifi-check-title">Is your Wi-Fi actually working?</h2><p>Run a quick check on the network you selected. Share the result to help other students.</p></div>
-            <span className="campus-badge"><span className="campus-badge-dot" /> SPSU · Udaipur pilot</span>
-          </div>
-          <div className="campus-wifi-grid">
-            <div className="wifi-controls">
-              <label>Wi-Fi network you're using<select id="wifi-network" value={wifiNetwork} onChange={(event) => setWifiNetwork(event.target.value)}>
-                <option value="SPSU">SPSU</option><option value="SPSU_1">SPSU_1</option><option value="SPSU_MGMT">SPSU_MGMT</option><option value="BYOD">BYOD</option><option value="Other">Another campus Wi-Fi</option>
-              </select></label>
-              {wifiNetwork === 'Other' && <label>Network name<input value={customWifiNetwork} maxLength={60} onChange={(event) => setCustomWifiNetwork(event.target.value)} placeholder="Enter the network name" /></label>}
-              <div className="wifi-control-actions">
-                <button type="button" className="button button-teal" onClick={runWifiCheck} disabled={wifiChecking}>{wifiChecking ? 'Checking connection…' : 'Check this connection'} <span aria-hidden="true">→</span></button>
-                <button type="button" className="button button-outline" onClick={useMyLocation} disabled={locationPending}>{locationPending ? 'Finding you…' : '⌖ Nearby · 1 km'}</button>
-              </div>
-              <div className="wifi-radius-row"><label htmlFor="radius-setting">Nearby report range</label><select id="radius-setting" value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}><option value={1}>1 km</option><option value={3}>3 km</option><option value={5}>5 km</option></select></div>
-              <a className="speedtest-link" href="https://librespeed.org/" target="_blank" rel="noreferrer">Need download / upload speed? Try LibreSpeed ↗</a>
-            </div>
-            <div className="wifi-results" aria-live="polite">
-              {!wifiCheck && !wifiChecking && <div className="wifi-empty-state"><span className="wifi-empty-icon" aria-hidden="true">⌁</span><strong>Your connection, checked in seconds.</strong><p>We test the Fallback Atlas service three times and try one small public HTTPS request. No passwords or Wi-Fi credentials are collected.</p></div>}
-              {wifiChecking && <div className="wifi-running" role="status"><span className="wifi-loader" /><strong>Checking {wifiNetwork === 'Other' ? (customWifiNetwork || 'your network') : wifiNetwork}…</strong><p>Testing response time and public internet reachability.</p></div>}
-              {wifiCheck && !wifiChecking && <>
-                <div className="wifi-result-title"><div><span className="section-kicker">RESULT · {wifiCheck.networkName}</span><h3 className={'wifi-result-status wifi-status-' + wifiCheck.status}>{wifiCheck.status === 'working' ? 'Connection looks healthy' : wifiCheck.status === 'degraded' ? 'Connection may be unstable' : 'No connection detected'}</h3></div><span className={'wifi-status-symbol wifi-status-' + wifiCheck.status}>{wifiCheck.status === 'working' ? '✓' : wifiCheck.status === 'degraded' ? '≈' : '!'}</span></div>
-                <div className="wifi-metrics"><article><span>Average response</span><strong>{wifiCheck.averageLatencyMs === null ? '—' : wifiCheck.averageLatencyMs + ' ms'}</strong></article><article><span>App checks</span><strong>{wifiCheck.successfulProbes}/{wifiCheck.totalProbes}</strong></article><article><span>Public test</span><strong>{wifiCheck.publicInternetReachable ? 'Reached' : 'Not reached'}</strong></article></div>
-                <p className="wifi-result-note">{wifiCheck.publicInternetReachable ? 'A public internet test endpoint responded. This is a lightweight reachability check, not a full speed test.' : 'The public test endpoint did not respond. It may be blocked by the network, so this alone does not prove all internet access is down.'}</p>
-                <button type="button" className="button button-outline share-check-button" onClick={shareWifiResult}>Share this result with nearby students ↗</button>
-              </>}
-            </div>
-          </div>
-          <p className="wifi-disclosure"><span aria-hidden="true">ⓘ</span> Your browser cannot read the connected Wi-Fi name or radio signal strength. Select the network manually. Location access is optional; only a report you choose to submit can share an approximate location. This check measures access to this app and one public endpoint, not all websites.</p>
-        </section>
+                <WifiScanPanel
+          center={mapCenter}
+          radiusKm={radiusKm}
+          areaSelected={nearbyAreaReady}
+          onRadiusChange={setRadiusKm}
+          onUseLocation={useMyLocation}
+          locationPending={locationPending}
+          refreshToken={wifiScanRefreshToken}
+          onRefresh={() => setWifiScanRefreshToken((value) => value + 1)}
+          onObservationsChange={handleWifiObservationsChange}
+        />
 
         {message && <div className="notice" role="status"><span>ⓘ</span><p>{message}</p><button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
 
@@ -694,7 +629,7 @@ function App() {
               <div><span className="section-kicker">NEARBY CONNECTIVITY</span><h3>Connectivity around {mapLocationLabel}</h3></div>
               <span className="preview-label">{showDemoMarkers ? 'DEMO MARKERS' : 'LOCATION VIEW'}</span>
             </div>
-            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} reports={areaReports.filter((report) => !report.demo)} theme={theme} />
+            <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} reports={areaReports.filter((report) => !report.demo)} wifiScans={nearbyWifiObservations} theme={theme} />
             <div className="map-footer"><span className="map-footer-icon">ⓘ</span><span>{showDemoMarkers ? 'Sample markers are shown only for the Udaipur prototype. They are not verified live reports.' : 'No sample markers are shown for this searched location. Reports appear only when matching reports exist.'} Map by <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · data © OpenStreetMap contributors.</span></div>
           </div>
 
@@ -738,10 +673,10 @@ function App() {
         </section>
 
         <section className="how-section" id="how-it-works">
-          <div><span className="section-kicker">DESIGNED FOR OUTAGES</span><h2>Know what to try next.</h2><p>Fallback Atlas brings campus Wi-Fi checks and community reports together, so students can compare what is working nearby without sharing passwords or personal details.</p></div>
+          <div><span className="section-kicker">DESIGNED FOR OUTAGES</span><h2>Know what to try next.</h2><p>Fallback Atlas combines fresh Android Wi-Fi observations with community reports, so people can see which access points phones actually detected nearby. It never guesses network names.</p></div>
           <div className="how-steps">
             <article><span>01</span><strong>Find nearby options</strong><p>Use an optional 1 km location view to find recent reports around you.</p></article>
-            <article><span>02</span><strong>Check your connection</strong><p>Measure response time and check whether a public internet endpoint responds.</p></article>
+            <article><span>02</span><strong>Scan nearby Wi-Fi</strong><p>Use the Android companion to discover real SSIDs and signal levels. This website alone cannot scan radio networks.</p></article>
             <article><span>03</span><strong>Help your campus</strong><p>Share a network result or outage observation for others to compare.</p></article>
           </div>
         </section>
@@ -756,7 +691,6 @@ function App() {
           <form onSubmit={submitReport} className="report-form">
             <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Fatehpura, Udaipur" /></label>
             <label>Infrastructure<select value={formService} onChange={(event) => setFormService(event.target.value)}>{serviceOptions.map((service) => <option key={service}>{service}</option>)}</select></label>
-            {formService === 'Campus Wi-Fi' && <label>Wi-Fi network name<input required maxLength="60" value={formNetworkName} onChange={(event) => setFormNetworkName(event.target.value)} placeholder="e.g. SPSU_1 or BYOD" /><span className="field-hint">Never enter the Wi-Fi password.</span></label>}
             <fieldset><legend>What's the current status?</legend><div className="status-choice-list">{statusOptions.map((option) => <label key={option.value} className={'status-choice choice-' + option.value}><input type="radio" name="status" value={option.value} checked={formStatus === option.value} onChange={(event) => setFormStatus(event.target.value)} /><span className="choice-dot" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></label>)}</div></fieldset>
             <label>What did you observe? <span className="optional-label">Optional</span><textarea rows="3" maxLength="280" value={formNote} onChange={(event) => setFormNote(event.target.value)} placeholder="Share a brief, non-personal observation." /></label>
             <div className="privacy-note"><span>⌑</span><p>Don't include phone numbers, names, exact home addresses or other personal details.</p></div>
