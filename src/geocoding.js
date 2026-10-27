@@ -93,7 +93,7 @@ function waitForRequestSlot() {
   });
 }
 
-export async function geocodeLocation(query) {
+export async function geocodeLocation(query, fetchImpl) {
   const normalized = String(query || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return null;
 
@@ -115,7 +115,8 @@ export async function geocodeLocation(query) {
 
   let response;
   try {
-    response = await fetch(url, {
+    const request = fetchImpl || fetch;
+    response = await request(url, {
       headers: { Accept: 'application/json' },
       referrerPolicy: 'strict-origin-when-cross-origin'
     });
