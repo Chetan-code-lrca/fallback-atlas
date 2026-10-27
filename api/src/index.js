@@ -117,12 +117,28 @@ app.http('health', {
         message: 'Shared report storage is connected.'
       });
     } catch (error) {
-      context.error('Fallback Atlas health check failed to access report storage.');
+      // Log only sanitized storage diagnostics. Never log the connection string or account key.
+      context.error('Fallback Atlas storage health check failed: ' + JSON.stringify({
+        name: String(error && error.name || 'Error').slice(0, 60),
+        code: String(error && error.code || '').slice(0, 80),
+        statusCode: Number.isFinite(Number(error && error.statusCode)) ? Number(error.statusCode) : null,
+        storageErrorCode: String(error && error.details && error.details.errorCode || '').slice(0, 100)
+      }));
+      const diagnosticsRequested = new URL(request.url).searchParams.get('diagnostics') === '1';
       return response(503, {
         status: 'degraded',
         mode: 'unavailable',
         sharedReportsConfigured: false,
-        message: 'Shared storage is configured but not reachable.'
+        message: 'Shared storage is configured but not reachable.',
+        ...(diagnosticsRequested ? {
+          diagnostic: {
+            name: String(error && error.name || 'Error').slice(0, 60),
+            code: String(error && error.code || '').slice(0, 80),
+            statusCode: Number.isFinite(Number(error && error.statusCode)) ? Number(error.statusCode) : null,
+            storageErrorCode: String(error && error.details && error.details.errorCode || '').slice(0, 100),
+            message: String(error && error.message || '').slice(0, 180)
+          }
+        } : {})
       });
     }
   }
