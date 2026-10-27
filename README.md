@@ -24,7 +24,8 @@
 | --- | --- | --- |
 | Frontend | React + Create React App | Existing scaffold; migrate to a maintained build tool later |
 | Interactive map | MapLibre GL JS | Loaded as a browser ES module |
-| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |\n| Geocoding | OpenStreetMap Nominatim | On-submit search, local caching and per-tab throttling; low-volume pilot only |
+| Map style | OpenFreeMap Liberty | Public style; no API key required for the prototype |
+| Geocoding | OpenStreetMap Nominatim | On-submit search, local caching and per-tab throttling; low-volume pilot only |
 | Hosting | Azure Static Web Apps Free | No Azure backend resources currently required |
 | CI/CD | GitHub Actions | Deploys static frontend on push |
 | Tests | React Testing Library + Jest | Runs in a separate GitHub Actions workflow |

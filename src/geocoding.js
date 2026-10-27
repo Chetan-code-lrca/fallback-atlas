@@ -94,7 +94,7 @@ function waitForRequestSlot() {
 }
 
 export async function geocodeLocation(query) {
-  const normalized = String(query || '').trim().replace(/\\s+/g, ' ');
+  const normalized = String(query || '').trim().replace(/\s+/g, ' ');
   if (!normalized) return null;
 
   const cacheKey = normalized.toLocaleLowerCase();

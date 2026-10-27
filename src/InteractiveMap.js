@@ -58,6 +58,8 @@ function InteractiveMap({
   const mapLoadedRef = useRef(false);
   const showDemoMarkersRef = useRef(showDemoMarkers);
   const [mapStatus, setMapStatus] = useState('loading');
+  initialCenterRef.current = center;
+  initialZoomRef.current = zoom;
   showDemoMarkersRef.current = showDemoMarkers;
 
   useEffect(() => {
