@@ -187,12 +187,10 @@ test('day and night appearance can be switched and saved', () => {
   expect(document.documentElement.getAttribute('data-theme')).toBe('light');
 });
 
-test('campus Wi-Fi report requires a network name and does not ask for a password', () => {
+test('Wi-Fi observations are separate from manually entered service reports', () => {
   const { container } = render(<App />);
-  fireEvent.click(buttonContaining(container, 'Share a report'));
-  fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Campus Wi-Fi' } });
-  const networkField = container.querySelector('.report-form input[placeholder="e.g. SPSU_1 or BYOD"]');
-  expect(networkField).not.toBeNull();
-  expect(networkField.required).toBe(true);
-  expect(container.querySelector('.report-form input[type="password"]')).toBeNull();
+  const services = Array.from(container.querySelector('.report-form select').options).map((option) => option.value || option.textContent);
+  expect(services).not.toContain('Campus Wi-Fi');
+  expect(container.querySelector('.campus-wifi-panel')).not.toBeNull();
+  expect(container.querySelector('.campus-wifi-panel').textContent).toContain('No guessed SSIDs');
 });

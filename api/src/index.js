@@ -73,6 +73,7 @@ async function loadRecentReports(table) {
   const filter = "PartitionKey eq '" + REPORTS_PARTITION + "' and createdAt ge '" + cutoffIso + "'";
   const reports = [];
   for await (const entity of table.listEntities({ queryOptions: { filter } })) {
+    if (entity.service === 'Campus Wi-Fi') continue; // Legacy browser-entered labels were not verified radio scans.
     reports.push(toApiReport(entity));
     if (reports.length >= MAX_LIST_ROWS) break;
   }
@@ -167,7 +168,7 @@ app.http('reports', {
       const requestedRadius = Number(params.get('radiusKm') || 10);
       const radiusKm = Number.isFinite(requestedRadius) ? Math.min(50, Math.max(1, requestedRadius)) : 10;
       const service = String(params.get('service') || '').trim();
-      if (service && !['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power'].includes(service)) {
+      if (service && !['Mobile data', 'Fixed broadband', 'Power'].includes(service)) {
         return response(400, { error: 'invalid_service', message: 'Unknown service filter.' });
       }
 

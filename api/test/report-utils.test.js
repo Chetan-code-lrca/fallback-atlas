@@ -75,27 +75,22 @@ test('rejects future observation times', () => {
 });
 
 
-test('Campus Wi-Fi reports require a network name', () => {
-  const missing = validateReportInput({
-    area: 'SPSU campus', service: 'Campus Wi-Fi', status: 'degraded'
+test('rejects manually typed Campus Wi-Fi as a generic outage status', () => {
+  const result = validateReportInput({
+    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'made-up-name',
+    status: 'working', note: 'A website probe cannot verify an SSID.'
   });
-  assert.equal(missing.ok, false);
-
-  const valid = validateReportInput({
-    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'SPSU_1',
-    status: 'degraded', note: 'Connection test was slow.'
-  });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.value.networkName, 'SPSU_1');
+  assert.equal(result.ok, false);
 });
 
-test('API output includes network name but excludes storage internals', () => {
+test('generic outage reports do not expose legacy manually entered network names', () => {
   const report = toApiReport({
-    id: 'wifi-test', partitionKey: 'reports', rowKey: 'internal-row-key',
-    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'SPSU_MGMT',
+    id: 'legacy-wifi', partitionKey: 'reports', rowKey: 'internal-row-key',
+    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'unverified-name',
     status: 'working', createdAt: '2026-10-27T12:00:00.000Z'
   });
-  assert.equal(report.networkName, 'SPSU_MGMT');
+  assert.equal(report.service, 'Campus Wi-Fi');
+  assert.equal(Object.prototype.hasOwnProperty.call(report, 'networkName'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(report, 'partitionKey'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(report, 'rowKey'), false);
 });
