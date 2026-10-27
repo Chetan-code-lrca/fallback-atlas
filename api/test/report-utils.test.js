@@ -73,3 +73,29 @@ test('rejects future observation times', () => {
   },now);
   assert.equal(result.ok,false);
 });
+
+
+test('Campus Wi-Fi reports require a network name', () => {
+  const missing = validateReportInput({
+    area: 'SPSU campus', service: 'Campus Wi-Fi', status: 'degraded'
+  });
+  assert.equal(missing.ok, false);
+
+  const valid = validateReportInput({
+    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'SPSU_1',
+    status: 'degraded', note: 'Connection test was slow.'
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.value.networkName, 'SPSU_1');
+});
+
+test('API output includes network name but excludes storage internals', () => {
+  const report = toApiReport({
+    id: 'wifi-test', partitionKey: 'reports', rowKey: 'internal-row-key',
+    area: 'SPSU campus', service: 'Campus Wi-Fi', networkName: 'SPSU_MGMT',
+    status: 'working', createdAt: '2026-10-27T12:00:00.000Z'
+  });
+  assert.equal(report.networkName, 'SPSU_MGMT');
+  assert.equal(Object.prototype.hasOwnProperty.call(report, 'partitionKey'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(report, 'rowKey'), false);
+});

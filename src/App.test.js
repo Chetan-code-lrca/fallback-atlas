@@ -155,7 +155,7 @@ test('successful API submission becomes a shared report with freshness metadata'
 
   expect(container.querySelector('.notice').textContent).toContain('Report shared with other visitors');
   expect(container.querySelector('.report-feed').textContent).toContain('Power restored near campus.');
-  expect(container.querySelector('.api-status-banner').textContent).toContain('Shared reporting is online');
+  expect(container.querySelector('.api-status-banner').textContent).toContain('Community reports are online');
   expect(window.localStorage.getItem('fallback-atlas-local-reports')).not.toContain('shared-123');
 });
 
@@ -175,4 +175,24 @@ test('service filters only show reports from the selected category', async () =>
   const feedText = container.querySelector('.report-feed').textContent;
   expect(feedText).toContain('Power');
   expect(feedText).not.toContain('Fixed broadband');
+});
+
+
+test('day and night appearance can be switched and saved', () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Night view'));
+  expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  expect(window.localStorage.getItem('fallback-atlas-theme')).toBe('dark');
+  fireEvent.click(buttonContaining(container, 'Day view'));
+  expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+});
+
+test('campus Wi-Fi report requires a network name and does not ask for a password', () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Share a report'));
+  fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Campus Wi-Fi' } });
+  const networkField = container.querySelector('.report-form input[placeholder="e.g. SPSU_1 or BYOD"]');
+  expect(networkField).not.toBeNull();
+  expect(networkField.required).toBe(true);
+  expect(container.querySelector('.report-form input[type="password"]')).toBeNull();
 });
