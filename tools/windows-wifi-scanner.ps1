@@ -120,7 +120,74 @@ Write-Host ''
 Write-Host ('Found ' + $observations.Count + ' unique SSID/frequency entries:') -ForegroundColor Green
 $observations | Select-Object networkName, signalPercent, frequencyMhz, security | Format-Table -AutoSize
 Write-Host 'Review the names. Do not share private hotspot names or networks you do not want publicly disclosed.' -ForegroundColor Yellow
-$consent = Read-Host "Type SHARE to upload SSIDs and approximate location; anything else cancels"
+
+# Add row numbers so only explicitly selected access points can be shared.
+for ($idx = 0; $idx -lt $observations.Count; $idx++) {
+  $observations[$idx] | Add-Member -NotePropertyName selectionNumber -NotePropertyValue ($idx + 1) -Force
+}
+Write-Host ''
+$observations | Select-Object @{Name='No';Expression={$_.selectionNumber}}, networkName, signalPercent, frequencyMhz, security | Format-Table -AutoSize
+$selection = (Read-Host "Enter row numbers to share (comma-separated, e.g. 4,5,11). Type ALL for every row; anything else cancels").Trim()
+if ($selection -match '(?i)^ALL$area = (Read-Host 'Enter a public area label (for example, SPSU campus, Udaipur)').Trim()
+if ([string]::IsNullOrWhiteSpace($area)) { Write-Host 'Area label is required. Nothing uploaded.' -ForegroundColor Red; exit 1 }
+if ($area.Length -gt 120) { $area = $area.Substring(0, 120) }
+try {
+  $latitude = [double]::Parse((Read-Host 'Enter approximate latitude'), [System.Globalization.CultureInfo]::InvariantCulture)
+  $longitude = [double]::Parse((Read-Host 'Enter approximate longitude'), [System.Globalization.CultureInfo]::InvariantCulture)
+} catch { Write-Host 'Coordinates must be numeric and use a decimal point. Nothing uploaded.' -ForegroundColor Red; exit 1 }
+if ($latitude -lt -90 -or $latitude -gt 90 -or $longitude -lt -180 -or $longitude -gt 180) { Write-Host 'Coordinates out of range. Nothing uploaded.' -ForegroundColor Red; exit 1 }
+
+$body = [ordered]@{
+  area = $area
+  latitude = [math]::Round($latitude, 3)
+  longitude = [math]::Round($longitude, 3)
+  networks = @($observations | ForEach-Object { [ordered]@{
+    networkName=$_.networkName; signalDbm=$_.signalDbm; signalPercent=$_.signalPercent
+    signalType=$_.signalType; frequencyMhz=$_.frequencyMhz; security=$_.security; observedAt=$_.observedAt
+  } })
+}
+$json = $body | ConvertTo-Json -Depth 6 -Compress
+try {
+  $result = Invoke-RestMethod -Uri $ApiUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $json -TimeoutSec 20
+  Write-Host ''
+  Write-Host ("Shared " + $result.accepted + " observations with Fallback Atlas.") -ForegroundColor Green
+  Write-Host 'Refresh the nearby Wi-Fi section. Radio signal does not prove internet access.'
+} catch {
+  $status = 'unknown status'; $responseText = ''
+  if ($_.Exception.Response) {
+    try {
+      $status = [int]$_.Exception.Response.StatusCode
+      $stream = $_.Exception.Response.GetResponseStream()
+      if ($stream) { $reader = New-Object System.IO.StreamReader($stream); $responseText=$reader.ReadToEnd(); $reader.Dispose() }
+    } catch {}
+  }
+  Write-Host ("Upload failed (" + $status + ").") -ForegroundColor Red
+  if ($responseText) { Write-Host $responseText } else { Write-Host $_.Exception.Message }
+  exit 1
+}
+) {
+  $selectedObservations = @($observations)
+} else {
+  $tokens = @($selection -split '[,\s]+' | Where-Object { $_ -ne '' })
+  if ($tokens.Count -eq 0) { Write-Host 'Cancelled. Nothing was uploaded.' -ForegroundColor Gray; exit 0 }
+  $numbers = @()
+  foreach ($token in $tokens) {
+    $number = 0
+    if (-not [int]::TryParse($token, [ref]$number) -or $number -lt 1 -or $number -gt $observations.Count) {
+      Write-Host ("Invalid row number: " + $token + ". Nothing was uploaded.") -ForegroundColor Red
+      exit 1
+    }
+    $numbers += $number
+  }
+  $numbers = @($numbers | Select-Object -Unique)
+  $selectedObservations = @($observations | Where-Object { $numbers -contains $_.selectionNumber })
+}
+if ($selectedObservations.Count -lt 1) { Write-Host 'No rows selected. Nothing was uploaded.' -ForegroundColor Gray; exit 0 }
+$observations = @($selectedObservations)
+Write-Host ''
+Write-Host 'Only these selected rows will be uploaded:' -ForegroundColor Cyan
+$observations | Select-Object networkName, signalPercent, frequencyMhz, security | Format-Table -AutoSize
+$consent = Read-Host ("Type SHARE to upload these " + $observations.Count + " selected observations and approximate location; anything else cancels")
 if ($consent -cne 'SHARE') { Write-Host 'Cancelled. Nothing was uploaded.' -ForegroundColor Gray; exit 0 }
 $area = (Read-Host 'Enter a public area label (for example, SPSU campus, Udaipur)').Trim()
 if ([string]::IsNullOrWhiteSpace($area)) { Write-Host 'Area label is required. Nothing uploaded.' -ForegroundColor Red; exit 1 }
