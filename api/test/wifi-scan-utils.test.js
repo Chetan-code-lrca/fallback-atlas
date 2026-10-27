@@ -55,3 +55,18 @@ test('serializes a Wi-Fi observation without Azure storage keys', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(result, 'partitionKey'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, 'rowKey'), false);
 });
+
+test('preserves Windows signal percentage and labels the derived dBm as an estimate', () => {
+  const now = new Date('2026-10-27T12:00:00.000Z');
+  const result = validateWifiScanInput({
+    area: 'SPSU campus, Udaipur', latitude: 24.58, longitude: 73.68,
+    networks: [{
+      networkName: 'windows-seen-network', signalDbm: -80, signalPercent: 40,
+      signalType: 'windows-percent-estimate', frequencyMhz: 2437,
+      security: 'WPA2-Personal', observedAt: now.toISOString()
+    }]
+  }, now);
+  assert.equal(result.ok, true);
+  assert.equal(result.value.networks[0].signalPercent, 40);
+  assert.equal(result.value.networks[0].signalType, 'windows-percent-estimate');
+});

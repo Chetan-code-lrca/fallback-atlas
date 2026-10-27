@@ -66,7 +66,9 @@ function createWifiPopupContent(point) {
   const title = document.createElement('strong');
   title.textContent = point.networkName;
   const details = document.createElement('p');
-  details.textContent = point.signalDbm + ' dBm · ' + point.frequencyMhz + ' MHz · ' + (point.security || 'security unknown');
+  details.textContent = (point.signalType === 'windows-percent-estimate'
+    ? 'Windows-reported ' + point.signalPercent + '% signal (rough estimate ' + point.signalDbm + ' dBm)'
+    : point.signalDbm + ' dBm') + ' · ' + point.frequencyMhz + ' MHz · ' + (point.security || 'security unknown');
   const area = document.createElement('p');
   area.textContent = point.area || 'Approximate scan area';
   const disclaimer = document.createElement('small');

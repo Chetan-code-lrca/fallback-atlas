@@ -49,6 +49,14 @@ function validateWifiScanInput(input, now = new Date()) {
     if (!Number.isInteger(signalDbm) || signalDbm < -110 || signalDbm > -10) {
       return { ok: false, error: 'Signal strength must be a valid dBm value between -110 and -10.' };
     }
+    const signalType = item.signalType === 'windows-percent-estimate' ? 'windows-percent-estimate' : 'android-rssi';
+    let signalPercent;
+    if (signalType === 'windows-percent-estimate') {
+      signalPercent = Number(item.signalPercent);
+      if (!Number.isInteger(signalPercent) || signalPercent < 0 || signalPercent > 100) {
+        return { ok: false, error: 'Windows signal percentage must be an integer from 0 to 100.' };
+      }
+    }
     const frequencyMhz = Number(item.frequencyMhz);
     if (!Number.isInteger(frequencyMhz) || frequencyMhz < 2400 || frequencyMhz > 7125) {
       return { ok: false, error: 'Frequency must be between 2400 and 7125 MHz.' };
@@ -62,7 +70,11 @@ function validateWifiScanInput(input, now = new Date()) {
     const dedupeKey = networkName.toLocaleLowerCase('en') + '|' + frequencyMhz;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
-    networks.push({ networkName, signalDbm, frequencyMhz, security, observedAt: new Date(parsedTime).toISOString() });
+    networks.push({
+      networkName, signalDbm, frequencyMhz, security, signalType,
+      ...(signalPercent === undefined ? {} : { signalPercent }),
+      observedAt: new Date(parsedTime).toISOString()
+    });
   }
 
   if (networks.length < 1) return { ok: false, error: 'No unique visible networks were found in this scan.' };
@@ -85,6 +97,8 @@ function toApiWifiScan(entity) {
     area: String(entity.area || ''),
     networkName: String(entity.networkName || ''),
     signalDbm: Number(entity.signalDbm),
+    ...(entity.signalPercent === undefined ? {} : { signalPercent: Number(entity.signalPercent) }),
+    signalType: String(entity.signalType || 'android-rssi'),
     frequencyMhz: Number(entity.frequencyMhz),
     security: String(entity.security || 'Unknown'),
     latitude: Number(entity.latitude),

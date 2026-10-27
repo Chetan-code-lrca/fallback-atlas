@@ -9,7 +9,7 @@
 - Global place search, an interactive MapLibre map, OpenFreeMap basemap and OpenStreetMap attribution.
 - Location-aware map markers for reports with coordinates.
 - Community reports for mobile data, fixed broadband and power, with three statuses, timestamps and freshness labels.
-- A native Android companion app that discovers real nearby Wi-Fi access points (SSID, signal strength, frequency and security label) using Android's Wi-Fi scan API. The website does not pretend it can scan the radio itself.
+- Native Android and Windows companion scanners discover real nearby Wi-Fi access points. Android reports measured RSSI; Windows reports a percentage, so the Windows dBm display is explicitly marked as a rough estimate. The website itself does not scan the radio.
 - Azure endpoint: POST /api/wifi-scans accepts explicitly shared scan snapshots; GET /api/wifi-scans returns observations within a radius, visible for 15 minutes. The API rejects stale scans, hidden SSIDs and invalid signal/frequency readings.
 - Optional location permission to view reports within a 1 km, 3 km or 5 km radius.
 - Azure Functions managed API routes: GET /api/health, GET/POST /api/reports, and GET/POST /api/wifi-scans.
@@ -49,7 +49,13 @@ flowchart TD
 
 We avoid adding libraries without a clear role. Each open-source project has a specific purpose in the stack.
 
-## Build the Android scanner\n\nOpen the android directory in Android Studio with JDK 17 and Android SDK Platform 35. The app requires Android 11 or later, system Wi-Fi and Location enabled, and a user-approved scan permission. It does not connect to networks or collect passwords/BSSIDs. Scan observations are shared only after an explicit confirmation and only when Azure scan storage is configured. RSSI measures signal, not internet availability.\n\nThe Android GitHub Actions workflow builds a debug APK and publishes it as a 14-day workflow artifact.\n\n## Run locally
+## Wi-Fi companion scanners
+
+**Windows:** run `tools/windows-wifi-scanner.ps1` from PowerShell on a Windows laptop with Wi-Fi enabled. It requests a fresh scan through the Windows WLAN API, previews visible SSIDs, and uploads only after you type `SHARE`. It never uploads BSSIDs/MAC addresses, passwords or device IDs. Windows exposes signal percentage rather than true RSSI, so the site labels its dBm conversion as an estimate. Enter an approximate area and coordinates when prompted.
+
+**Android:** open the `android` directory in Android Studio with JDK 17 and Android SDK Platform 35. The app requires Android 11 or later, system Wi-Fi and Location enabled, and user-approved permissions. It does not connect to networks or collect passwords/BSSIDs. Scan observations are shared only after explicit confirmation and only when Azure scan storage is configured. RSSI measures signal, not internet availability. The Android GitHub Actions workflow builds a debug APK and publishes it as a 14-day workflow artifact.
+
+Both scanners publish real radio observations only after consent. Review SSIDs before sharing because public network names plus approximate location can reveal information about nearby networks.\n\n## Run locally
 
 Requirements: Node.js 22 or a compatible version and npm.
 

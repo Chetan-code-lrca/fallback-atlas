@@ -104,7 +104,9 @@ export default function WifiScanPanel({
               <div className="wifi-network-symbol" aria-hidden="true">⌁</div>
               <div className="wifi-network-copy">
                 <strong>{n.networkName}</strong>
-                <span>{signalLabel(Number(n.signalDbm))} signal · {n.signalDbm} dBm · {bandLabel(Number(n.frequencyMhz))}</span>
+                <span>{n.signalType === 'windows-percent-estimate'
+                  ? 'Windows-reported ' + n.signalPercent + '% signal · rough estimate ' + n.signalDbm + ' dBm · ' + bandLabel(Number(n.frequencyMhz))
+                  : signalLabel(Number(n.signalDbm)) + ' signal · ' + n.signalDbm + ' dBm · ' + bandLabel(Number(n.frequencyMhz))}</span>
                 <small>{n.security || 'Security unknown'} · {ageLabel(n.observedAt)} · {n.area}</small>
               </div>
               <span className={'wifi-signal-pill ' + (n.signalDbm >= -67 ? 'wifi-signal-good' : n.signalDbm >= -75 ? 'wifi-signal-fair' : 'wifi-signal-weak')}>{n.observations || 1} obs.</span>
@@ -113,7 +115,7 @@ export default function WifiScanPanel({
           <p className="wifi-feed-note">Signal strength means how strongly a device heard an access point. It does not prove the access point has working internet or measure download speed.</p>
         </>}
       </div>
-      <p className="wifi-disclosure"><span aria-hidden="true">ⓘ</span> Android scans need system permission and may be throttled. A shared observation includes SSID, signal level, frequency, security label, scan time and approximate location. It excludes passwords, BSSIDs/MAC addresses and device IDs. Shared observations appear in the nearby feed for 15 minutes.</p>
+      <p className="wifi-disclosure"><span aria-hidden="true">ⓘ</span> Android scans need system permission and may be throttled. Windows reports signal percentage, so its dBm value is only a rough estimate; Android reports measured RSSI. Shared observations include SSID, signal level, frequency, security label, scan time and approximate location. Passwords, BSSIDs/MAC addresses and device IDs are excluded. Shared observations appear in the nearby feed for 15 minutes.</p>
     </section>
   );
 }

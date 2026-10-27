@@ -436,6 +436,8 @@ app.http('wifi-scans', {
             areaKey: value.areaKey,
             networkName: network.networkName,
             signalDbm: network.signalDbm,
+            signalType: network.signalType || 'android-rssi',
+            ...(network.signalPercent === undefined ? {} : { signalPercent: network.signalPercent }),
             frequencyMhz: network.frequencyMhz,
             security: network.security,
             latitude: value.latitude,
