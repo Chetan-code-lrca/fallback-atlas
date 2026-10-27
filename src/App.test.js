@@ -1,5 +1,6 @@
 import React from 'react';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act } from 'react-dom/test-utils';
 import App from './App';
 
 const originalFetch = global.fetch;
@@ -26,6 +27,13 @@ function buttonContaining(container, text) {
 function submitLocation(container, value) {
   fireEvent.change(container.querySelector('#area-search'), { target: { value } });
   fireEvent.click(buttonContaining(container, 'Find location'));
+}
+
+async function submitLocationAndWait(container, value) {
+  await act(async () => {
+    submitLocation(container, value);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 test('defaults to Udaipur and labels demo markers clearly', () => {
@@ -63,8 +71,8 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   });
 
   const { container } = render(<App />);
-  submitLocation(container, 'Osaka, Japan');
-  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan'));
+  await submitLocationAndWait(container, 'Osaka, Japan');
+  expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan');
 
   expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Osaka, Japan');
   expect(container.querySelector('.live-map-shell').getAttribute('data-show-demo-markers')).toBe('false');
@@ -73,8 +81,8 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   expect(global.fetch.mock.calls[0][0]).toContain('q=Osaka%2C+Japan');
 
   // Submitting the same location again should use the browser cache.
-  submitLocation(container, 'Osaka, Japan');
-  await waitFor(() => expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan'));
+  await submitLocationAndWait(container, 'Osaka, Japan');
+  expect(container.querySelector('.section-heading h2').textContent).toBe('Osaka, Japan');
   expect(global.fetch).toHaveBeenCalledTimes(1);
 });
 
