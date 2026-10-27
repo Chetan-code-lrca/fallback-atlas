@@ -8,16 +8,30 @@ jest.mock('./geocoding', () => ({
   geocodeLocation: jest.fn()
 }));
 
+const originalFetch = global.fetch;
+
 beforeEach(() => {
   window.localStorage.clear();
   delete window.maplibregl;
   delete window.__MAPLIBRE_LOAD_STATE;
   window.FALLBACK_ATLAS_CONFIG = { geocoderUrl: 'https://nominatim.openstreetmap.org/search' };
   geocodeLocation.mockReset();
+  global.fetch = jest.fn((url, options) => {
+    if (url === '/api/health') {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: 'ok', mode: 'local' }) });
+    }
+    if (options && options.method === 'POST') {
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'storage_not_configured' }) });
+    }
+    return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'storage_not_configured' }) });
+  });
+  window.fetch = global.fetch;
 });
 
 afterEach(() => {
   cleanup();
+  global.fetch = originalFetch;
+  window.fetch = originalFetch;
 });
 
 function buttonContaining(container, text) {
@@ -70,7 +84,7 @@ test('searching a worldwide location recenters the map and hides Udaipur demo ma
   expect(container.querySelector('.notice').textContent).toContain('No verified outage reports');
 });
 
-test('reports are saved locally and shown in the current area feed', () => {
+test('reports are saved locally and marked pending when shared storage is not configured', async () => {
   const { container } = render(<App />);
   fireEvent.click(buttonContaining(container, 'Report status'));
   fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
@@ -81,15 +95,68 @@ test('reports are saved locally and shown in the current area feed', () => {
   fireEvent.change(container.querySelector('.report-form textarea'), {
     target: { value: 'Testing the local prototype.' }
   });
-  fireEvent.click(buttonContaining(container, 'Save local report'));
-  expect(container.querySelector('.notice').textContent).toContain('saved on this device only');
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Submit report'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(container.querySelector('.notice').textContent).toContain('pending sync');
   expect(container.querySelector('.report-feed').textContent).toContain('Hiran Magri, Udaipur');
   expect(container.querySelector('.report-feed').textContent).toContain('Power');
   expect(container.querySelector('.report-feed').textContent).toContain('Down');
   expect(window.localStorage.getItem('fallback-atlas-local-reports')).toContain('Hiran Magri, Udaipur');
+  expect(window.localStorage.getItem('fallback-atlas-local-reports')).toContain('pending');
 });
 
-test('service filters only show reports from the selected category', () => {
+test('successful API submission becomes a shared report with freshness metadata', async () => {
+  global.fetch.mockImplementation((url, options) => {
+    if (url === '/api/health') {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: 'ok', mode: 'shared' }) });
+    }
+    if (options && options.method === 'POST') {
+      return Promise.resolve({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          mode: 'shared',
+          report: {
+            id: 'shared-123',
+            area: 'Udaipur, Rajasthan',
+            service: 'Power',
+            status: 'working',
+            note: 'Power restored near campus.',
+            createdAt: new Date().toISOString(),
+            observedAt: new Date().toISOString(),
+            shared: true
+          }
+        })
+      });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ mode: 'shared', reports: [] }) });
+  });
+
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Report status'));
+  fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
+    target: { value: 'Udaipur, Rajasthan' }
+  });
+  fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
+  fireEvent.click(container.querySelector('.status-choice input[value="working"]'));
+  fireEvent.change(container.querySelector('.report-form textarea'), {
+    target: { value: 'Power restored near campus.' }
+  });
+
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Submit report'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(container.querySelector('.notice').textContent).toContain('Report shared with other visitors');
+  expect(container.querySelector('.report-feed').textContent).toContain('Power restored near campus.');
+  expect(container.querySelector('.api-status-banner').textContent).toContain('Shared reporting is online');
+  expect(window.localStorage.getItem('fallback-atlas-local-reports')).not.toContain('shared-123');
+});
+
+test('service filters only show reports from the selected category', async () => {
   const { container } = render(<App />);
   fireEvent.click(buttonContaining(container, 'Report status'));
   fireEvent.change(container.querySelector('.report-form input:not([type="radio"])'), {
@@ -97,7 +164,10 @@ test('service filters only show reports from the selected category', () => {
   });
   fireEvent.change(container.querySelector('.report-form select'), { target: { value: 'Power' } });
   fireEvent.click(container.querySelector('.status-choice input[value="working"]'));
-  fireEvent.click(buttonContaining(container, 'Save local report'));
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Submit report'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   fireEvent.click(buttonContaining(container, 'Power'));
   const feedText = container.querySelector('.report-feed').textContent;
   expect(feedText).toContain('Power');
