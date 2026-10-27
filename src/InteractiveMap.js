@@ -103,6 +103,7 @@ function InteractiveMap({
   const mapRef = useRef(null);
   const initialCenterRef = useRef(center);
   const initialZoomRef = useRef(zoom);
+  const initialThemeRef = useRef(theme);
   const markerRefs = useRef([]);
   const mapLoadedRef = useRef(false);
   const showDemoMarkersRef = useRef(showDemoMarkers);
@@ -110,6 +111,7 @@ function InteractiveMap({
   const [mapStatus, setMapStatus] = useState('loading');
   initialCenterRef.current = center;
   initialZoomRef.current = zoom;
+  initialThemeRef.current = theme;
   showDemoMarkersRef.current = showDemoMarkers;
   reportsRef.current = reports;
 
@@ -133,7 +135,7 @@ function InteractiveMap({
       try {
         map = new maplibre.Map({
           container,
-          style: theme === 'dark' ? 'https://tiles.openfreemap.org/styles/fiord' : 'https://tiles.openfreemap.org/styles/liberty',
+          style: initialThemeRef.current === 'dark' ? 'https://tiles.openfreemap.org/styles/fiord' : 'https://tiles.openfreemap.org/styles/liberty',
           center: initialCenterRef.current,
           zoom: initialZoomRef.current,
           minZoom: 2,
