@@ -41,7 +41,7 @@ function getTableClient() {
 
   if (!tableClientPromise) {
     const table = TableClient.fromConnectionString(connectionString, TABLE_NAME);
-    tableClientPromise = table.createIfNotExists()
+    tableClientPromise = table.createTable()
       .then(() => table)
       .catch((error) => {
         tableClientPromise = undefined;

@@ -98,3 +98,8 @@ See [API setup](api/README.md), [cost and governance](docs/COST_AND_GOVERNANCE.m
 ## Attribution and license
 
 Map rendering uses MapLibre GL JS (BSD-3-Clause), OpenFreeMap (MIT software) and OpenStreetMap data (ODbL). Nominatim's public server usage policy still applies. The Fallback Atlas application is released under the MIT License; see [LICENSE](LICENSE).
+
+
+### Azure Tables SDK table initialization
+
+The API uses `TableClient.createTable()` from `@azure/data-tables`. The SDK has no `createIfNotExists()` method on `TableClient`; `createTable()` is the supported operation and is safe when the table already exists.
