@@ -443,7 +443,7 @@ app.http('wifi-scans', {
             createdAt: now.toISOString(),
             observedAt: network.observedAt
           };
-          return { action: 'create', entity };
+          return ['create', entity];
         });
 
         await table.submitTransaction(entities);
