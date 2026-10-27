@@ -8,7 +8,9 @@
 
 - Global place search, an interactive MapLibre map, OpenFreeMap basemap and OpenStreetMap attribution.
 - Location-aware map markers for reports with coordinates.
-- Three infrastructure types, three statuses, report validation, timestamps and freshness labels.
+- Campus Wi-Fi, mobile data, fixed broadband and power reports, with three statuses, timestamps and freshness labels.
+- A student-initiated Wi-Fi connection check measuring Azure endpoint response time and one public HTTPS reachability probe. It does not read Wi-Fi passwords, network names or radio signal strength automatically.
+- Optional location permission to view reports within a 1 km, 3 km or 5 km radius.
 - Azure Functions managed API routes: `GET /api/health`, `GET /api/reports`, and `POST /api/reports`.
 - Azure Table Storage adapter with a 30-day query window, area normalization, coordinate-radius search, basic flood protection and input validation.
 - Browser-local fallback and a pending-report queue when the API is not configured or unavailable.

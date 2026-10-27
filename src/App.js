@@ -65,7 +65,7 @@ function findLocalArea(value) {
   ) || null;
 }
 
-const serviceOptions = ['Mobile data', 'Fixed broadband', 'Power'];
+const serviceOptions = ['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power'];
 const statusOptions = [
   { value: 'working', label: 'Working', hint: 'Available as expected' },
   { value: 'degraded', label: 'Degraded', hint: 'Slow or unreliable' },
@@ -124,11 +124,24 @@ function StatusPill({ status }) {
 }
 
 function ServiceIcon({ service }) {
-  const icon = service === 'Power' ? 'ϟ' : service === 'Fixed broadband' ? '⌁' : '⌁';
+  const icon = service === 'Power' ? 'ϟ' : service === 'Campus Wi-Fi' ? '⌁' : service === 'Fixed broadband' ? '⌁' : '⌁';
   return <span className={'service-icon service-' + service.toLowerCase().replace(/\s+/g, '-')} aria-hidden="true">{icon}</span>;
 }
 
 function App() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('fallback-atlas-theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (error) { return 'light'; }
+  });
+  const [wifiNetwork, setWifiNetwork] = useState('SPSU');
+  const [customWifiNetwork, setCustomWifiNetwork] = useState('');
+  const [wifiChecking, setWifiChecking] = useState(false);
+  const [wifiCheck, setWifiCheck] = useState(null);
+  const [locationPending, setLocationPending] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(1);
   const [area, setArea] = useState('Udaipur, Rajasthan');
   const [mapLocationLabel, setMapLocationLabel] = useState('Udaipur, Rajasthan');
   const [mapCenter, setMapCenter] = useState([73.685806, 24.582285]);
@@ -164,9 +177,15 @@ function App() {
   });
   const [formArea, setFormArea] = useState('Udaipur, Rajasthan');
   const [formService, setFormService] = useState('Mobile data');
+  const [formNetworkName, setFormNetworkName] = useState('SPSU');
   const [formStatus, setFormStatus] = useState('degraded');
   const [formNote, setFormNote] = useState('');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { window.localStorage.setItem('fallback-atlas-theme', theme); } catch (error) { /* optional preference */ }
+  }, [theme]);
 
   useEffect(() => {
     try {
@@ -221,7 +240,7 @@ function App() {
       params.set('area', area);
       params.set('latitude', String(mapCenter[1]));
       params.set('longitude', String(mapCenter[0]));
-      params.set('radiusKm', '10');
+      params.set('radiusKm', String(radiusKm));
 
       try {
         const response = await fetch('/api/reports?' + params.toString(), {
@@ -256,7 +275,7 @@ function App() {
     }
     loadSharedReports();
     return () => { cancelled = true; };
-  }, [area, mapCenter, reportRefreshToken]);
+  }, [area, mapCenter, reportRefreshToken, radiusKm]);
 
   const selectedArea = area.trim().toLowerCase();
   const selectedAreaPreset = findLocalArea(area);
@@ -305,6 +324,66 @@ function App() {
       : recentRealReports.length < 3
         ? recentRealReports.length + ' recent community report(s); not enough evidence to corroborate status.'
         : recentRealReports.length + ' recent community reports. Community evidence is not official utility verification.';
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { setMessage('This browser does not support location access. Search for your campus area instead.'); return; }
+    setLocationPending(true);
+    navigator.geolocation.getCurrentPosition((position) => {
+      setMapCenter([position.coords.longitude, position.coords.latitude]);
+      setMapZoom(15); setRadiusKm(1); setArea('Within 1 km of you'); setMapLocationLabel('Near you');
+      setFormArea('Within 1 km of you'); setShowDemoMarkers(false);
+      setMessage('Showing reports within 1 km of your approximate location. Your location stays in this browser unless you submit a report.');
+      setLocationPending(false);
+    }, (error) => {
+      setMessage(error && error.code === 1 ? 'Location permission was not granted.' : 'Your location could not be determined. You can still search an area manually.');
+      setLocationPending(false);
+    }, { enableHighAccuracy: false, timeout: 9000, maximumAge: 60000 });
+  }
+
+  async function runWifiCheck() {
+    const selectedNetwork = wifiNetwork === 'Other' ? customWifiNetwork.trim() : wifiNetwork;
+    if (!selectedNetwork) { setMessage('Enter the name of the campus Wi-Fi network first.'); return; }
+    if (wifiChecking) return;
+    setWifiChecking(true); setWifiCheck(null);
+    const responseTimes = [];
+    for (let index = 0; index < 3; index += 1) {
+      const start = window.performance && window.performance.now ? window.performance.now() : Date.now();
+      try {
+        const response = await fetch('/api/health', { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('Endpoint unavailable');
+        await response.json();
+        const end = window.performance && window.performance.now ? window.performance.now() : Date.now();
+        responseTimes.push(Math.max(0, Math.round(end - start)));
+      } catch (error) { /* failed probe */ }
+    }
+    let publicInternetReachable = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 3500);
+    try {
+      await fetch('https://connectivitycheck.gstatic.com/generate_204', { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+      publicInternetReachable = true;
+    } catch (error) {
+      publicInternetReachable = false;
+    } finally { window.clearTimeout(timeout); }
+    const successfulProbes = responseTimes.length;
+    const averageLatencyMs = successfulProbes ? Math.round(responseTimes.reduce((sum, n) => sum + n, 0) / successfulProbes) : null;
+    let status = 'working';
+    if (successfulProbes === 0 && !publicInternetReachable) status = 'down';
+    else if (successfulProbes < 3 || !publicInternetReachable || averageLatencyMs > 500) status = 'degraded';
+    setWifiCheck({ networkName: selectedNetwork, status, successfulProbes, totalProbes: 3, averageLatencyMs, publicInternetReachable, checkedAt: new Date().toISOString() });
+    setWifiChecking(false);
+  }
+
+  function shareWifiResult() {
+    if (!wifiCheck) return;
+    setFormArea(area); setFormService('Campus Wi-Fi'); setFormNetworkName(wifiCheck.networkName); setFormStatus(wifiCheck.status);
+    const latency = wifiCheck.averageLatencyMs === null ? 'no successful response-time measurement' : 'average response time ' + wifiCheck.averageLatencyMs + ' ms';
+    const note = 'Browser check on ' + wifiCheck.networkName + ': ' + wifiCheck.successfulProbes + '/' + wifiCheck.totalProbes +
+      ' Azure endpoint checks succeeded; ' + latency + '; public HTTPS test endpoint ' +
+      (wifiCheck.publicInternetReachable ? 'reachable' : 'not reached') + '. This is not a Wi-Fi signal-strength measurement.';
+    setFormNote(note.slice(0, 280)); setReportOpen(true);
+    setMessage('Review the connection check before submitting it. Shared reports may be seen by other visitors.');
+  }
 
   async function searchArea(event) {
     event.preventDefault();
@@ -360,6 +439,7 @@ function App() {
     if (reportSubmitting) return;
 
     const reportArea = formArea.trim() || area;
+    if (formService === 'Campus Wi-Fi' && !formNetworkName.trim()) { setMessage('Enter the Wi-Fi network name before submitting this report.'); return; }
     const preset = findLocalArea(reportArea);
     let reportCenter = null;
     if (preset) reportCenter = preset.center;
@@ -368,10 +448,11 @@ function App() {
     const payload = {
       area: reportArea,
       service: formService,
+      ...(formService === 'Campus Wi-Fi' ? { networkName: formNetworkName.trim() } : {}),
       status: formStatus,
       note: formNote.trim() || 'Community status report.',
       observedAt: new Date().toISOString(),
-      ...(reportCenter ? { latitude: reportCenter[1], longitude: reportCenter[0] } : {})
+      ...(reportCenter ? { latitude: Number(reportCenter[1].toFixed(3)), longitude: Number(reportCenter[0].toFixed(3)) } : {})
     };
 
     setReportSubmitting(true);
@@ -491,23 +572,29 @@ function App() {
       <header className="topbar">
         <a className="brand" href="#home" aria-label="Fallback Atlas home">
           <SignalMark />
-          <span className="brand-copy"><strong>fallback atlas</strong><small>Community resilience map</small></span>
+          <span className="brand-copy"><strong>Fallback Atlas</strong><small>Know what still works</small></span>
         </a>
         <nav className="top-nav" aria-label="Main navigation">
-          <a href="#status">Explore status</a>
-          <a href="#how-it-works">How it works</a>
+          <a href="#campus-wifi">Campus Wi-Fi</a>
+          <a href="#status">Community reports</a>
+          <a href="#how-it-works">Our approach</a>
         </nav>
-        <button className="button button-dark top-report" onClick={() => { setFormArea(area); setReportOpen(true); }}>
-          <span aria-hidden="true">＋</span> Report status
-        </button>
+        <div className="topbar-actions">
+          <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to day view' : 'Switch to night view'} title={theme === 'dark' ? 'Switch to day view' : 'Switch to night view'}>
+            <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span><span>{theme === 'dark' ? 'Day view' : 'Night view'}</span>
+          </button>
+          <button className="button button-dark top-report" onClick={() => { setFormArea(area); setReportOpen(true); }}>
+            <span aria-hidden="true">＋</span> Share a report
+          </button>
+        </div>
       </header>
 
       <main id="home">
         <section className="hero">
           <div className="hero-copy">
-            <div className="eyebrow"><span className="eyebrow-dot" /> COMMUNITY-POWERED RESILIENCE</div>
-            <h1>Know what still <span>works.</span></h1>
-            <p>When a connection drops, local knowledge matters. Check reports about mobile data, broadband and power in one place.</p>
+            <div className="eyebrow"><span className="eyebrow-dot" /> CAMPUS & COMMUNITY CONNECTIVITY</div>
+            <h1>Find a connection that <span>works.</span></h1>
+            <p>Wi-Fi problems shouldn't stop your day. Check nearby network reports, test whether the internet is reachable, and help your campus know what's working.</p>
             <form className="search-form" onSubmit={searchArea}>
               <span className="search-icon" aria-hidden="true">⌕</span>
               <label className="visually-hidden" htmlFor="area-search">Search area or PIN code</label>
@@ -525,7 +612,7 @@ function App() {
             <div className="art-node art-node-three"><span>Broadband</span><b>✓</b></div>
             <div className="art-spark spark-one">✳</div><div className="art-spark spark-two">✳</div>
           </div>
-          <div className="demo-ribbon"><span className="demo-ribbon-dot" /> Prototype preview <span className="ribbon-divider">/</span> Example data, not live service status</div>
+          <div className="demo-ribbon"><span className="demo-ribbon-dot" /> Community-powered <span className="ribbon-divider">/</span> Demo reports are clearly labelled</div>
         </section>
 
         <div className={'api-status-banner api-mode-' + apiMode} role="status" aria-live="polite">
@@ -533,19 +620,19 @@ function App() {
           <div className="api-status-copy">
             <strong>
               {!browserOnline ? 'Offline mode — reports stay on this device' :
-                apiMode === 'shared' ? 'Shared reporting is online' :
-                  apiMode === 'checking' ? 'Checking report service…' :
-                    apiMode === 'local' ? 'Local-only mode — storage setup still needed' :
-                      'Shared report service unavailable'}
+                apiMode === 'shared' ? 'Community reports are online' :
+                  apiMode === 'checking' ? 'Checking community updates…' :
+                    apiMode === 'local' ? 'Reports are saved on this device' :
+                      'Community updates are temporarily unavailable'}
             </strong>
             <small>
               {!browserOnline
                 ? 'The app shell and local report form can work after the first online visit. Map tiles and location search need internet; queued reports have not been shared yet.'
                 : apiMode === 'shared'
-                  ? 'New reports can be seen by other visitors. Reports are still community-submitted, not independently verified.'
+                  ? 'Your report can help nearby students. Community reports are not official network measurements.'
                   : pendingReports.length
                     ? pendingReports.length + ' report(s) are pending sync and remain on this device only.'
-                    : 'Until shared storage is connected, test reports stay in this browser and are not visible to classmates.'}
+                    : 'Reports are currently saved only on this device, so classmates cannot see them yet.'}
             </small>
           </div>
           {apiMode === 'shared' && pendingReports.length > 0 && (
@@ -555,11 +642,43 @@ function App() {
           )}
         </div>
 
+        <section className="campus-wifi-panel panel" id="campus-wifi" aria-labelledby="wifi-check-title">
+          <div className="campus-wifi-heading">
+            <div><span className="section-kicker">CAMPUS CONNECTIVITY</span><h2 id="wifi-check-title">Is your Wi-Fi actually working?</h2><p>Run a quick check on the network you selected. Share the result to help other students.</p></div>
+            <span className="campus-badge"><span className="campus-badge-dot" /> SPSU · Udaipur pilot</span>
+          </div>
+          <div className="campus-wifi-grid">
+            <div className="wifi-controls">
+              <label>Wi-Fi network you're using<select id="wifi-network" value={wifiNetwork} onChange={(event) => setWifiNetwork(event.target.value)}>
+                <option value="SPSU">SPSU</option><option value="SPSU_1">SPSU_1</option><option value="SPSU_MGMT">SPSU_MGMT</option><option value="BYOD">BYOD</option><option value="Other">Another campus Wi-Fi</option>
+              </select></label>
+              {wifiNetwork === 'Other' && <label>Network name<input value={customWifiNetwork} maxLength={60} onChange={(event) => setCustomWifiNetwork(event.target.value)} placeholder="Enter the network name" /></label>}
+              <div className="wifi-control-actions">
+                <button type="button" className="button button-teal" onClick={runWifiCheck} disabled={wifiChecking}>{wifiChecking ? 'Checking connection…' : 'Check this connection'} <span aria-hidden="true">→</span></button>
+                <button type="button" className="button button-outline" onClick={useMyLocation} disabled={locationPending}>{locationPending ? 'Finding you…' : '⌖ Nearby · 1 km'}</button>
+              </div>
+              <div className="wifi-radius-row"><label htmlFor="radius-setting">Nearby report range</label><select id="radius-setting" value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))}><option value={1}>1 km</option><option value={3}>3 km</option><option value={5}>5 km</option></select></div>
+              <a className="speedtest-link" href="https://librespeed.org/" target="_blank" rel="noreferrer">Need download / upload speed? Try LibreSpeed ↗</a>
+            </div>
+            <div className="wifi-results" aria-live="polite">
+              {!wifiCheck && !wifiChecking && <div className="wifi-empty-state"><span className="wifi-empty-icon" aria-hidden="true">⌁</span><strong>Your connection, checked in seconds.</strong><p>We test the Fallback Atlas service three times and try one small public HTTPS request. No passwords or Wi-Fi credentials are collected.</p></div>}
+              {wifiChecking && <div className="wifi-running" role="status"><span className="wifi-loader" /><strong>Checking {wifiNetwork === 'Other' ? (customWifiNetwork || 'your network') : wifiNetwork}…</strong><p>Testing response time and public internet reachability.</p></div>}
+              {wifiCheck && !wifiChecking && <>
+                <div className="wifi-result-title"><div><span className="section-kicker">RESULT · {wifiCheck.networkName}</span><h3 className={'wifi-result-status wifi-status-' + wifiCheck.status}>{wifiCheck.status === 'working' ? 'Connection looks healthy' : wifiCheck.status === 'degraded' ? 'Connection may be unstable' : 'No connection detected'}</h3></div><span className={'wifi-status-symbol wifi-status-' + wifiCheck.status}>{wifiCheck.status === 'working' ? '✓' : wifiCheck.status === 'degraded' ? '≈' : '!'}</span></div>
+                <div className="wifi-metrics"><article><span>Average response</span><strong>{wifiCheck.averageLatencyMs === null ? '—' : wifiCheck.averageLatencyMs + ' ms'}</strong></article><article><span>App checks</span><strong>{wifiCheck.successfulProbes}/{wifiCheck.totalProbes}</strong></article><article><span>Public test</span><strong>{wifiCheck.publicInternetReachable ? 'Reached' : 'Not reached'}</strong></article></div>
+                <p className="wifi-result-note">{wifiCheck.publicInternetReachable ? 'A public internet test endpoint responded. This is a lightweight reachability check, not a full speed test.' : 'The public test endpoint did not respond. It may be blocked by the network, so this alone does not prove all internet access is down.'}</p>
+                <button type="button" className="button button-outline share-check-button" onClick={shareWifiResult}>Share this result with nearby students ↗</button>
+              </>}
+            </div>
+          </div>
+          <p className="wifi-disclosure"><span aria-hidden="true">ⓘ</span> Your browser cannot read the connected Wi-Fi name or radio signal strength. Select the network manually. Location access is optional; only a report you choose to submit can share an approximate location. This check measures access to this app and one public endpoint, not all websites.</p>
+        </section>
+
         {message && <div className="notice" role="status"><span>ⓘ</span><p>{message}</p><button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
 
         <section className="status-overview" id="status">
           <div className="section-heading">
-            <div><span className="section-kicker">AREA SNAPSHOT · SAMPLE + LOCAL REPORTS</span><h2>{area}</h2></div>
+            <div><span className="section-kicker">LOCAL CONNECTIVITY · COMMUNITY REPORTS</span><h2>{area}</h2></div>
             <span className="sample-tag"><span /> {hasSampleReports ? 'DEMO DATA' : sharedReportCount ? 'SHARED REPORTS' : localReports.length ? 'LOCAL REPORTS' : 'NO REPORTS'}</span>
           </div>
           <div className="summary-grid">
@@ -572,7 +691,7 @@ function App() {
         <section className="workspace">
           <div className="panel map-panel">
             <div className="panel-heading">
-              <div><span className="section-kicker">LOCAL OVERVIEW</span><h3>Interactive map · {mapLocationLabel}</h3></div>
+              <div><span className="section-kicker">NEARBY CONNECTIVITY</span><h3>Connectivity around {mapLocationLabel}</h3></div>
               <span className="preview-label">{showDemoMarkers ? 'DEMO MARKERS' : 'LOCATION VIEW'}</span>
             </div>
             <InteractiveMap center={mapCenter} zoom={mapZoom} areaLabel={mapLocationLabel} showDemoMarkers={showDemoMarkers} reports={areaReports.filter((report) => !report.demo)} />
@@ -581,7 +700,7 @@ function App() {
 
           <aside className="panel updates-panel">
             <div className="panel-heading updates-heading">
-              <div><span className="section-kicker">COMMUNITY PULSE</span><h3>Recent reports</h3></div>
+              <div><span className="section-kicker">CAMPUS & COMMUNITY</span><h3>Recent reports</h3></div>
               <div className="updates-heading-actions">
                 <button className="refresh-button" type="button" onClick={() => setReportRefreshToken((current) => current + 1)} aria-label="Refresh community reports" title="Fetch the latest reports">↻ Refresh</button>
                 <span className="count-bubble" aria-label={areaReports.length + ' visible reports'}>{areaReports.length}</span>
@@ -613,22 +732,22 @@ function App() {
             {activeView === 'feed' && <div className="report-feed">
               {visibleReports.length === 0 ? <div className="empty-state"><span>⌁</span><strong>No reports in this filter</strong><p>Try a different service or submit a local example.</p></div> : visibleReports.map((report) => <article className="feed-item" key={report.id}><div className="feed-item-top"><strong>{report.service}</strong><StatusPill status={report.status} /></div><span className="feed-area">⌖ {report.area}</span><p>{report.note}</p><div className="feed-metadata"><span className={'freshness-pill ' + freshnessClass(report)}>{freshnessLabel(report)} · {timeAgo(report)}</span><small>{report.demo ? 'Demo only' : report.shared ? 'Shared community report' : 'Local only · pending sync'}</small></div></article>)}
             </div>}
-            <button className="button button-outline full-button" onClick={() => { setFormArea(area); setReportOpen(true); }}><span>＋</span> Add a community report</button>
+            <button className="button button-outline full-button" onClick={() => { setFormArea(area); setReportOpen(true); }}><span>＋</span> Share a report</button>
             <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}{apiMode === 'shared' ? 'Shared reports are community-submitted, not official outage confirmations.' : 'Local reports are saved in this browser and are not shared yet.'}</p>
           </aside>
         </section>
 
         <section className="how-section" id="how-it-works">
-          <div><span className="section-kicker">DESIGNED FOR OUTAGES</span><h2>Useful when networks are not.</h2><p>Fallback Atlas is being built to make local infrastructure status easier to understand, even when connectivity is unreliable.</p></div>
+          <div><span className="section-kicker">DESIGNED FOR OUTAGES</span><h2>Know what to try next.</h2><p>Fallback Atlas brings campus Wi-Fi checks and community reports together, so students can compare what is working nearby without sharing passwords or personal details.</p></div>
           <div className="how-steps">
-            <article><span>01</span><strong>Check the area</strong><p>Compare power, mobile data and broadband reports side by side.</p></article>
-            <article><span>02</span><strong>Share what works</strong><p>Community updates can help others make informed decisions.</p></article>
-            <article><span>03</span><strong>See the evidence</strong><p>Future reports will show freshness and confidence, not just a colour.</p></article>
+            <article><span>01</span><strong>Find nearby options</strong><p>Use an optional 1 km location view to find recent reports around you.</p></article>
+            <article><span>02</span><strong>Check your connection</strong><p>Measure response time and check whether a public internet endpoint responds.</p></article>
+            <article><span>03</span><strong>Help your campus</strong><p>Share a network result or outage observation for others to compare.</p></article>
           </div>
         </section>
       </main>
 
-      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Open-source prototype · Built for community resilience</span><span className="footer-status"><i /> {!browserOnline ? 'Offline · local queue available' : apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
+      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Built for campus and community resilience</span><span className="footer-status"><i /> {!browserOnline ? 'Offline · local queue available' : apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
 
       {reportOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
         <section className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
@@ -637,6 +756,7 @@ function App() {
           <form onSubmit={submitReport} className="report-form">
             <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Fatehpura, Udaipur" /></label>
             <label>Infrastructure<select value={formService} onChange={(event) => setFormService(event.target.value)}>{serviceOptions.map((service) => <option key={service}>{service}</option>)}</select></label>
+            {formService === 'Campus Wi-Fi' && <label>Wi-Fi network name<input required maxLength="60" value={formNetworkName} onChange={(event) => setFormNetworkName(event.target.value)} placeholder="e.g. SPSU_1 or BYOD" /><span className="field-hint">Never enter the Wi-Fi password.</span></label>}
             <fieldset><legend>What's the current status?</legend><div className="status-choice-list">{statusOptions.map((option) => <label key={option.value} className={'status-choice choice-' + option.value}><input type="radio" name="status" value={option.value} checked={formStatus === option.value} onChange={(event) => setFormStatus(event.target.value)} /><span className="choice-dot" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></label>)}</div></fieldset>
             <label>What did you observe? <span className="optional-label">Optional</span><textarea rows="3" maxLength="280" value={formNote} onChange={(event) => setFormNote(event.target.value)} placeholder="Share a brief, non-personal observation." /></label>
             <div className="privacy-note"><span>⌑</span><p>Don't include phone numbers, names, exact home addresses or other personal details.</p></div>

@@ -15,7 +15,7 @@ function createPopupContent(point, demo = true) {
   content.className = 'atlas-map-popup';
 
   const title = document.createElement('strong');
-  title.textContent = point.service + ' · ' + statusLabels[point.status];
+  title.textContent = (point.networkName ? point.networkName + ' · ' : '') + point.service + ' · ' + statusLabels[point.status];
 
   const area = document.createElement('p');
   area.textContent = point.area;
@@ -68,7 +68,7 @@ function addCommunityMarkers(map, maplibre, markerRefs, reports) {
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
     if (!statusLabels[report.status] ||
-        !['Mobile data', 'Fixed broadband', 'Power'].includes(report.service)) return;
+        !['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power'].includes(report.service)) return;
 
     const symbol = report.status === 'working' ? '✓' : report.status === 'degraded' ? '≈' : '!';
     const markerElement = document.createElement('button');
@@ -96,7 +96,8 @@ function InteractiveMap({
   zoom = 12,
   areaLabel = 'Udaipur, Rajasthan',
   showDemoMarkers = true,
-  reports = []
+  reports = [],
+  theme = 'light'
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -132,7 +133,7 @@ function InteractiveMap({
       try {
         map = new maplibre.Map({
           container,
-          style: 'https://tiles.openfreemap.org/styles/liberty',
+          style: theme === 'dark' ? 'https://tiles.openfreemap.org/styles/fiord' : 'https://tiles.openfreemap.org/styles/liberty',
           center: initialCenterRef.current,
           zoom: initialZoomRef.current,
           minZoom: 2,
@@ -183,6 +184,12 @@ function InteractiveMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    map.setStyle(theme === 'dark' ? 'https://tiles.openfreemap.org/styles/fiord' : 'https://tiles.openfreemap.org/styles/liberty');
+  }, [theme]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (map && Array.isArray(center) && center.length === 2) {
       map.flyTo({ center, zoom, duration: 550 });
     }
@@ -203,7 +210,7 @@ function InteractiveMap({
         ref={containerRef}
         className="live-map"
         role="application"
-        aria-label={'Interactive map centered on ' + areaLabel +
+        aria-label={'Map showing connectivity around ' + areaLabel +
           (showDemoMarkers ? ' with illustrative demo markers' : ' without sample markers')}
       />
       {mapStatus !== 'ready' && (

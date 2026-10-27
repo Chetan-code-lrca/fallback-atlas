@@ -166,7 +166,7 @@ app.http('reports', {
       const requestedRadius = Number(params.get('radiusKm') || 10);
       const radiusKm = Number.isFinite(requestedRadius) ? Math.min(50, Math.max(1, requestedRadius)) : 10;
       const service = String(params.get('service') || '').trim();
-      if (service && !['Mobile data', 'Fixed broadband', 'Power'].includes(service)) {
+      if (service && !['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power'].includes(service)) {
         return response(400, { error: 'invalid_service', message: 'Unknown service filter.' });
       }
 
@@ -231,6 +231,7 @@ app.http('reports', {
           area: value.area,
           areaKey: areaKeyFor(value.area),
           service: value.service,
+          ...(value.networkName ? { networkName: value.networkName } : {}),
           status: value.status,
           note: value.note,
           createdAt: now.toISOString(),

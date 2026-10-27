@@ -1,9 +1,10 @@
 const crypto = require('node:crypto');
 
-const SERVICES = new Set(['Mobile data', 'Fixed broadband', 'Power']);
+const SERVICES = new Set(['Campus Wi-Fi', 'Mobile data', 'Fixed broadband', 'Power']);
 const STATUSES = new Set(['working', 'degraded', 'down']);
 const MAX_AREA_LENGTH = 120;
 const MAX_NOTE_LENGTH = 280;
+const MAX_NETWORK_NAME_LENGTH = 60;
 
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return '';
@@ -38,7 +39,7 @@ function validateReportInput(input, now = new Date()) {
 
   const service = cleanText(input.service, 40);
   if (!SERVICES.has(service)) {
-    return { ok: false, error: 'Service must be Mobile data, Fixed broadband, or Power.' };
+    return { ok: false, error: 'Service must be Campus Wi-Fi, Mobile data, Fixed broadband, or Power.' };
   }
 
   const status = cleanText(input.status, 20).toLowerCase();
@@ -46,6 +47,8 @@ function validateReportInput(input, now = new Date()) {
     return { ok: false, error: 'Status must be working, degraded, or down.' };
   }
 
+  const networkName = cleanText(input.networkName || '', MAX_NETWORK_NAME_LENGTH);
+  if (service === 'Campus Wi-Fi' && !networkName) return { ok: false, error: 'Network name is required for Campus Wi-Fi reports.' };
   const note = cleanText(input.note || '', MAX_NOTE_LENGTH);
   const hasLatitude = input.latitude !== undefined && input.latitude !== null && input.latitude !== '';
   const hasLongitude = input.longitude !== undefined && input.longitude !== null && input.longitude !== '';
@@ -85,6 +88,7 @@ function validateReportInput(input, now = new Date()) {
       area,
       areaKey: areaKeyFor(area),
       service,
+      ...(service === 'Campus Wi-Fi' ? { networkName } : {}),
       status,
       note,
       observedAt,
@@ -112,6 +116,7 @@ function toApiReport(entity) {
     id: String(entity.id || entity.rowKey || ''),
     area: String(entity.area || ''),
     service: String(entity.service || ''),
+    ...(entity.networkName ? { networkName: String(entity.networkName) } : {}),
     status: String(entity.status || ''),
     note: String(entity.note || ''),
     createdAt: String(entity.createdAt || ''),
