@@ -10,7 +10,7 @@ The agent uses Android \`ConnectivityManager.NetworkCallback\` and the \`NET_CAP
 
 | Field | Example | Shared? |
 | --- | --- | --- |
-| Public area label | SPSU campus, Udaipur | Yes |
+| Public area label | Udaipur, Rajasthan | Yes |
 | Transport | wifi / mobile-data | Yes |
 | Status | working / degraded / down | Yes |
 | Android internet validation | true / false | Yes |
@@ -47,7 +47,7 @@ After the branch has been merged, tested and reviewed, enable only for known pil
 1. Open the existing Azure Static Web App in the Azure portal.
 2. Go to **Configuration** (application settings).
 3. Add \`CONNECTIVITY_INGEST_ENABLED\` with value \`true\`.
-4. Add \`CONNECTIVITY_ALLOWED_AREAS\` with one or more exact public area labels separated by semicolons. For a first controlled test, use \`SPSU campus, Udaipur\`.
+4. Add \`CONNECTIVITY_ALLOWED_AREAS\` with one or more exact public area labels separated by semicolons. For a first controlled test, use \`Udaipur, Rajasthan\`.
 5. Save the settings and verify \`GET /api/connectivity-observations?area=SPSU%20campus%2C%20Udaipur\` returns \`ingestionEnabled: true\`.
 6. Do not add areas that you are not actively piloting. Keep the allowlist as short as possible.
 
@@ -58,7 +58,7 @@ This flag is not an authentication mechanism. Before inviting the general public
 ## Android tester workflow
 
 1. Install the debug APK from the Android CI artifact or build it locally.
-2. Enter the exact allowlisted area label.
+2. Enter the exact allowlisted area label. This is a manually selected public area, not GPS-tracked; update it whenever the device is used in another area.
 3. Read the disclosure and choose **Enable automatic monitoring**.
 4. Leave the app open during the first test. The status line should reflect Wi-Fi and/or mobile-data capability changes.
 5. Test Wi-Fi and cellular separately where available. Network callbacks may not emit a \`down\` status for a transport that was never observed while monitoring was enabled.
