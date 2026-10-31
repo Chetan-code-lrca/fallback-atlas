@@ -364,6 +364,15 @@ test('wifi-scans POST returns storage_not_configured in local-only mode', async 
 });
 
 
+test('connectivity GET remains empty and avoids table creation while pilot is disabled', async () => {
+  state.createTableErrors.ConnectivityStatus = true;
+  const result = await invoke('connectivity-observations', 'GET',
+    'connectivity-observations?area=Udaipur%2C%20Rajasthan');
+  assert.equal(result.status, 200);
+  assert.equal(result.jsonBody.ingestionEnabled, false);
+  assert.deepEqual(result.jsonBody.observations, []);
+});
+
 test('connectivity ingestion is disabled by default', async () => {
   const result = await invoke('connectivity-observations', 'POST', 'connectivity-observations', validConnectivityObservation());
   assert.equal(result.status, 503);
