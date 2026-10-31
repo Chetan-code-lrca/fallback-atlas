@@ -201,7 +201,7 @@ public class MainActivity extends Activity {
         areaInput = new EditText(this);
         areaInput.setSingleLine(true);
         areaInput.setFilters(new InputFilter[] { new InputFilter.LengthFilter(120) });
-        areaInput.setText("SPSU campus, Udaipur");
+        areaInput.setText("Udaipur, Rajasthan");
         areaInput.setHint("e.g. campus building or public place");
         areaInput.setTextSize(15);
         areaInput.setPadding(dp(12), dp(11), dp(12), dp(11));
@@ -209,6 +209,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams areaParams = params(-1, -2);
         areaParams.topMargin = dp(7);
         root.addView(areaInput, areaParams);
+
+        TextView areaDisclosure = text("Use the public place or area you are actually testing. This label is not GPS-tracked; update it when you move to a different area.", 12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams areaDisclosureParams = params(-1, -2);
+        areaDisclosureParams.topMargin = dp(5);
+        root.addView(areaDisclosure, areaDisclosureParams);
 
         TextView monitorHeading = text("Automatic connectivity sharing", 16, Color.rgb(24, 42, 59), true);
         LinearLayout.LayoutParams monitorHeadingParams = params(-1, -2);
