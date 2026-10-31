@@ -4,7 +4,7 @@ const Module = require('node:module');
 const { areaKeyFor } = require('../src/report-utils');
 
 const state = {
-  tables: { Reports: [], WifiScans: [] },
+  tables: { Reports: [], WifiScans: [], ConnectivityStatus: [] },
   createTableErrors: {},
   listErrors: {},
   createErrors: {},
@@ -20,6 +20,8 @@ function resetState() {
     delete state.transactionErrors[name];
   }
   process.env.REPORTS_STORAGE_CONNECTION_STRING = 'in-memory-test-connection';
+  delete process.env.CONNECTIVITY_INGEST_ENABLED;
+  delete process.env.CONNECTIVITY_ALLOWED_AREAS;
 }
 
 class FakeTableClient {
@@ -38,6 +40,31 @@ class FakeTableClient {
       throw new Error('simulated entity write failure');
     }
     state.tables[this.tableName].push({ ...entity });
+  }
+
+  async getEntity(partitionKey, rowKey) {
+    const entity = state.tables[this.tableName].find((item) =>
+      item.partitionKey === partitionKey && item.rowKey === rowKey
+    );
+    if (!entity) {
+      const error = new Error('entity not found');
+      error.statusCode = 404;
+      error.code = 'ResourceNotFound';
+      throw error;
+    }
+    return { ...entity };
+  }
+
+  async upsertEntity(entity) {
+    if (state.createErrors[this.tableName]) {
+      throw new Error('simulated entity write failure');
+    }
+    const rows = state.tables[this.tableName];
+    const index = rows.findIndex((item) =>
+      item.partitionKey === entity.partitionKey && item.rowKey === entity.rowKey
+    );
+    if (index >= 0) rows[index] = { ...entity };
+    else rows.push({ ...entity });
   }
 
   async submitTransaction(actions) {
@@ -148,6 +175,26 @@ function validWifiScan(overrides = {}) {
 }
 
 beforeEach(resetState);
+
+
+function validConnectivityObservation(overrides = {}) {
+  return {
+    area: 'SPSU campus, Udaipur',
+    observation: {
+      service: 'wifi',
+      status: 'working',
+      internetValidated: true,
+      observedAt: new Date().toISOString(),
+      ...overrides
+    }
+  };
+}
+
+function enableConnectivityPilot() {
+  process.env.CONNECTIVITY_INGEST_ENABLED = 'true';
+  process.env.CONNECTIVITY_ALLOWED_AREAS = 'SPSU campus, Udaipur;Udaipur City';
+}
+
 
 test('health initialization failure returns bounded diagnostics', async () => {
   state.createTableErrors.Reports = true;
@@ -314,4 +361,85 @@ test('wifi-scans POST returns storage_not_configured in local-only mode', async 
   const result = await invoke('wifi-scans', 'POST', 'wifi-scans', validWifiScan());
   assert.equal(result.status, 503);
   assert.equal(result.jsonBody.error, 'storage_not_configured');
+});
+
+
+test('connectivity ingestion is disabled by default', async () => {
+  const result = await invoke('connectivity-observations', 'POST', 'connectivity-observations', validConnectivityObservation());
+  assert.equal(result.status, 503);
+  assert.equal(result.jsonBody.error, 'connectivity_ingest_disabled');
+  assert.equal(state.tables.ConnectivityStatus.length, 0);
+});
+
+test('connectivity ingestion requires an explicitly allowlisted pilot area', async () => {
+  enableConnectivityPilot();
+  const result = await invoke('connectivity-observations', 'POST', 'connectivity-observations', {
+    ...validConnectivityObservation(),
+    area: 'Another city'
+  });
+  assert.equal(result.status, 403);
+  assert.equal(result.jsonBody.error, 'area_not_in_pilot');
+  assert.equal(state.tables.ConnectivityStatus.length, 0);
+});
+
+test('connectivity ingestion validates service, status and timestamp', async () => {
+  enableConnectivityPilot();
+  const invalid = await invoke('connectivity-observations', 'POST', 'connectivity-observations',
+    validConnectivityObservation({ service: 'power' }));
+  const inconsistent = await invoke('connectivity-observations', 'POST', 'connectivity-observations',
+    validConnectivityObservation({ status: 'working', internetValidated: false }));
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.jsonBody.error, 'invalid_observation');
+  assert.equal(inconsistent.status, 400);
+  assert.equal(inconsistent.jsonBody.error, 'invalid_observation');
+  assert.equal(state.tables.ConnectivityStatus.length, 0);
+});
+
+test('connectivity ingestion overwrites one row per area and service', async () => {
+  enableConnectivityPilot();
+  const first = await invoke('connectivity-observations', 'POST', 'connectivity-observations', validConnectivityObservation());
+  assert.equal(first.status, 201);
+  assert.equal(first.jsonBody.accepted, 1);
+  assert.equal(state.tables.ConnectivityStatus.length, 1);
+
+  const repeated = await invoke('connectivity-observations', 'POST', 'connectivity-observations', validConnectivityObservation());
+  assert.equal(repeated.status, 200);
+  assert.equal(repeated.jsonBody.unchanged, true);
+  assert.equal(state.tables.ConnectivityStatus.length, 1);
+
+  const changed = await invoke('connectivity-observations', 'POST', 'connectivity-observations',
+    validConnectivityObservation({ status: 'degraded', internetValidated: false }));
+  assert.equal(changed.status, 429);
+  assert.equal(changed.jsonBody.error, 'observation_rate_limited');
+  assert.equal(state.tables.ConnectivityStatus.length, 1);
+});
+
+test('connectivity observations GET returns only fresh status for the requested area', async () => {
+  const areaKey = areaKeyFor('SPSU campus, Udaipur');
+  state.tables.ConnectivityStatus.push({
+    partitionKey: areaKey, rowKey: 'wifi', area: 'SPSU campus, Udaipur',
+    service: 'wifi', status: 'working', internetValidated: true,
+    observedAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  });
+  state.tables.ConnectivityStatus.push({
+    partitionKey: areaKey, rowKey: 'mobile-data', area: 'SPSU campus, Udaipur',
+    service: 'mobile-data', status: 'down', internetValidated: false,
+    observedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString()
+  });
+  const result = await invoke('connectivity-observations', 'GET',
+    'connectivity-observations?area=SPSU%20campus%2C%20Udaipur');
+  assert.equal(result.status, 200);
+  assert.equal(result.jsonBody.observations.length, 1);
+  assert.equal(result.jsonBody.observations[0].service, 'wifi');
+  assert.equal(result.jsonBody.observations[0].source, 'android-connectivity-agent');
+});
+
+test('connectivity observation storage failures return HTTP 503', async () => {
+  enableConnectivityPilot();
+  state.createErrors.ConnectivityStatus = true;
+  const result = await invoke('connectivity-observations', 'POST', 'connectivity-observations', validConnectivityObservation());
+  assert.equal(result.status, 503);
+  assert.equal(result.jsonBody.error, 'write_failed');
+  assert.equal(state.tables.ConnectivityStatus.length, 0);
 });
