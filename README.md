@@ -21,18 +21,25 @@
 
 ## Architecture
 
-```mermaid
+The website uses the same-origin Static Web Apps API for shared reports and nearby Wi-Fi observations. When shared storage is not configured or reachable, outage reports remain in the browser's local queue and are not represented as shared data.
+
+~~~mermaid
 flowchart TD
-  U[Classmate / community member] --> P[React PWA]
-  P --> M[MapLibre GL JS]
-  M --> T[OpenFreeMap style and map tiles]
+  U[Community member] --> P[React PWA]
+  P --> M[MapLibre map]
+  M --> T[OpenFreeMap tiles]
   P --> G[OpenStreetMap Nominatim search]
-  P -->|same-origin /api requests| F[Azure Static Web Apps managed Functions]
-  F --> V[Validate, normalize, rate-limit]
-  V --> D[Azure Table Storage: Reports]
-  P --> W[Nearby shared Wi-Fi observations]\n  A[Android Wi-Fi scanner] -->|explicit, consented upload| F\n  P --> L[Local browser queue]
-  L -->|sync when online| F
-```
+  P -->|GET /api/reports| F[Azure Static Web Apps Functions]
+  P -->|POST /api/reports| F
+  P -->|GET /api/wifi-scans| F
+  A[Android Wi-Fi scanner] -->|explicit user consent| F
+  W[Windows PowerShell scanner] -->|explicit user consent| F
+  F --> V[Validate and normalize]
+  V --> R[(Azure Table: Reports)]
+  V --> S[(Azure Table: WifiScans)]
+  P --> L[Browser-local report queue]
+  L -->|retry when online| F
+~~~
 
 ## Technology and open-source projects
 
@@ -43,7 +50,8 @@ flowchart TD
 | Basemap | [OpenFreeMap](https://github.com/hyperknot/openfreemap) | Public vector-tile/style service; no API key for this pilot |
 | Place search | [Nominatim](https://github.com/osm-search/Nominatim) + [OpenStreetMap data](https://www.openstreetmap.org/copyright) | User-submitted global location search; usage limits and attribution apply |
 | Serverless API | [Azure Functions JavaScript SDK](https://github.com/Azure/azure-functions-nodejs-library) | HTTP API on the existing Static Web App |
-| Storage SDK | [Azure Data Tables](https://github.com/Azure/azure-sdk-for-js/tree/main/sdk/tables/data-tables) | Persist outage reports and recent Wi-Fi observations |\n| Android discovery | [Android WifiManager](https://developer.android.com/develop/connectivity/wifi/wifi-scan) | Read real device-visible access points, signal dBm and frequency under user-granted permissions |
+| Storage SDK | [Azure Data Tables](https://github.com/Azure/azure-sdk-for-js/tree/main/sdk/tables/data-tables) | Persist outage reports and recent Wi-Fi observations |
+| Android discovery | [Android WifiManager](https://developer.android.com/develop/connectivity/wifi/wifi-scan) | Read real device-visible access points, signal dBm and frequency under user-granted permissions |
 | Tests | [Testing Library](https://github.com/testing-library/react-testing-library), Jest and Node's test runner | Check user flows and server-side validation |
 | Crowdsourcing inspiration | [Ushahidi Platform](https://github.com/ushahidi/platform) | Reference for incident collection and mapped reports; not bundled into this app |
 
@@ -55,7 +63,9 @@ We avoid adding libraries without a clear role. Each open-source project has a s
 
 **Android:** open the `android` directory in Android Studio with JDK 17 and Android SDK Platform 35. The app requires Android 11 or later, system Wi-Fi and Location enabled, and user-approved permissions. It does not connect to networks or collect passwords/BSSIDs. Scan observations are shared only after explicit confirmation and only when Azure scan storage is configured. RSSI measures signal, not internet availability. The Android GitHub Actions workflow builds a debug APK and publishes it as a 14-day workflow artifact.
 
-Both scanners publish real radio observations only after consent. Review SSIDs before sharing because public network names plus approximate location can reveal information about nearby networks.\n\n## Run locally
+Both scanners publish real radio observations only after consent. Review SSIDs before sharing because public network names plus approximate location can reveal information about nearby networks.
+
+## Run locally
 
 Requirements: Node.js 22 or a compatible version and npm.
 

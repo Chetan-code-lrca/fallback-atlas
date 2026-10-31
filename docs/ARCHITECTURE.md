@@ -1,37 +1,85 @@
 # Fallback Atlas architecture
 
-## Data flow
+## System overview
 
-```mermaid
-flowchart LR
-  Browser[React PWA in browser] --> Dashboard[Status dashboard and report form]
-  Dashboard --> Map[MapLibre GL JS]
-  Map --> Tiles[OpenFreeMap style / OpenStreetMap-derived tiles]
-  Dashboard --> Geo[On-submit Nominatim search]
-  Dashboard -->|GET /api/reports| API[Static Web Apps managed Functions]
-  Dashboard -->|POST /api/reports| API
-  API --> Validate[Validate and normalize]
-  Validate --> Table[Azure Table Storage: Reports]
-  Dashboard --> Local[Local browser queue]
-  Local -->|sync when online| API
-```
+Fallback Atlas is a React progressive web application hosted by Azure Static Web Apps. The frontend and HTTP API are deployed together. The API runs as Azure Static Web Apps managed Functions on Node.js 22 and optionally persists data in two Azure Table Storage tables.
 
-## Trust boundaries
+~~~mermaid
+flowchart TB
+  Visitor[Browser user] --> Web[React PWA]
+  Web --> Map[MapLibre GL JS]
+  Map --> Tiles[OpenFreeMap styles and tiles]
+  Web --> Search[OpenStreetMap Nominatim]
+  Web -->|GET/POST reports| API[Static Web Apps managed Functions]
+  Web -->|GET/POST Wi-Fi scans| API
+  Android[Android companion app] -->|consent-confirmed scan| API
+  Windows[Windows PowerShell scanner] -->|consent-confirmed scan| API
+  API --> Validate[Validate, normalize and apply pilot limits]
+  Validate --> Reports[(Azure Table Storage: Reports)]
+  Validate --> Wifi[(Azure Table Storage: WifiScans)]
+  Web --> Local[Browser local report queue]
+  Local -->|retry when online| API
+~~~
 
-- Browser inputs are untrusted; the API validates them again.
-- Local-only reports are not shared.
-- The Storage connection string stays in server-side Azure environment settings.
-- Geocoder and map services receive location queries / map tile requests. Do not submit sensitive addresses.
-- Community reports are observations, not official service status. Freshness helps interpret age but does not prove truth.
+## Components and responsibilities
 
-## Storage record
+| Component | Responsibility | Important boundary |
+| --- | --- | --- |
+| React PWA (src/App.js) | Search, report form, local queue, filters, theme and status UI | Browser data is untrusted; local-only records must not be described as shared |
+| MapLibre (src/InteractiveMap.js) | Interactive map, demo markers, community-report markers and observed Wi-Fi markers | Basemap and map assets are external network dependencies |
+| Nominatim (src/geocoding.js) | User-triggered place search and a small browser cache | Public endpoint policy applies; client-side throttling is not a global quota |
+| Azure Functions (api/src/index.js) | Health, report and Wi-Fi scan HTTP routes | Anonymous pilot endpoints validate input but are not a production abuse boundary |
+| Reports table | Community outage reports | Stores user-supplied area, service, status, note, timestamps and optional approximate coordinates |
+| WifiScans table | Recent device-observed Wi-Fi metadata | Stores SSID, signal, frequency, security, timestamps and rounded coordinates |
+| Android scanner | Reads Wi-Fi scan results through Android WifiManager | Upload requires explicit confirmation and a fresh scan |
+| Windows scanner | Starts a Windows WLAN scan and parses netsh results | Signal percentage is converted to a clearly identified rough dBm estimate |
 
-A report stores an opaque ID, normalized area key, area label, service, status, short note, server-created time, observed time and optional coordinates from the selected map view. No user identity is collected.
+## Outage report flow
 
-## Design decisions
+1. The user selects a place and enters a service status.
+2. The frontend submits the report to POST /api/reports.
+3. The API validates the object, area, service, status, note length, optional coordinates and observation timestamp.
+4. The API applies a per-normalized-area submission threshold, assigns a server timestamp and opaque ID, and writes the entity to the Reports table.
+5. Shared reports are loaded with GET /api/reports. The query returns up to 250 recent rows from a 30-day window before area/radius and optional service filtering.
+6. When shared storage is not configured or unavailable, the frontend retains the report locally and presents it as pending/local rather than shared.
 
-- Use the existing Static Web App's managed Functions API rather than a separate Function App or App Service.
-- Keep anonymous reporting for the small classroom pilot, with input checks and a per-area submission threshold.
-- Use Table Storage rather than a continuously running database server.
-- Keep map tiles/geocoding separate from the report API.
-- Keep demo markers visibly separate from real community submissions.
+The health route (GET /api/health) reports whether shared storage is configured and reachable. It does not validate the correctness of submitted community observations.
+
+## Wi-Fi observation flow
+
+1. The Android companion obtains results from Android's Wi-Fi scan API. The Windows companion requests a fresh WLAN scan and reads the visible network list.
+2. The scanner shows the user the networks that would be shared. The user selects entries and explicitly confirms upload.
+3. The scanners submit the area label, approximate coordinates and selected network observations to POST /api/wifi-scans.
+4. The API validates SSID length, signal range, frequency range, timestamp freshness and duplicate SSID/frequency pairs. Coordinates are rounded to three decimal places before storage.
+5. The API stores observations in the WifiScans table. The nearby feed (GET /api/wifi-scans) returns observations no older than 15 minutes and within the requested 1–5 km radius.
+
+Android provides measured RSSI. Windows provides a signal percentage; the app's conversion to dBm is an estimate, not measured RSSI. Neither scanner verifies internet access. SSIDs and approximate location can identify nearby networks, so users must not upload private network names or locations they are not authorised to share.
+
+## Storage and retention behavior
+
+- REPORTS_STORAGE_CONNECTION_STRING is a server-side Static Web Apps application setting. It must never be embedded in frontend code or committed to the repository.
+- The API lazily creates the Reports and WifiScans tables on first connection.
+- Report reads use a rolling 30-day filter and cap the query result at 250 rows.
+- Wi-Fi reads filter observations to the most recent 15 minutes and cap the in-memory scan query at 1,000 rows.
+- These windows govern visibility/query results. They do not physically delete expired entities from Azure Table Storage. A scheduled retention cleanup has not yet been implemented.
+
+The current per-area limits are pilot-level safeguards only. Because area labels are user-controlled, changing labels can evade an area-specific counter; concurrent submissions can also race the read-count-write sequence. They are not a reliable global rate limiter.
+
+## Offline behavior
+
+The service worker caches the same-origin app shell and static assets. It deliberately does not cache /api/ responses or third-party map/geocoder requests. The browser can reopen the app shell after an online visit and queue a report locally, but map tiles, place search and shared report APIs still require connectivity. Local queue entries are not proof of successful server submission.
+
+## Trust boundaries and privacy
+
+- Browser form fields, API request bodies and stored user submissions are untrusted.
+- API validation is repeated on the server; frontend checks are only a usability aid.
+- Azure storage credentials remain server-side.
+- Map tile providers and Nominatim receive the network requests needed to render maps and resolve user-entered search queries.
+- Community reports are not official or independently verified outage measurements.
+- Wi-Fi signal strength describes radio reception, not internet availability or throughput.
+- The scanners are designed not to upload BSSIDs/MAC addresses, passwords or device identifiers. The submitted SSID, approximate coordinates and timestamps can still be sensitive.
+- Anonymous public reporting currently lacks identity-based reputation, moderation queues and a strong global anti-abuse layer.
+
+## Deployment
+
+The Azure Static Web Apps workflow builds the root React application, deploys the build/ output, and deploys the api/ directory as managed Functions. The API runtime is configured as Node.js 22 in staticwebapp.config.json. The Android workflow independently builds a debug APK using JDK 17 and Android SDK Platform 35.
