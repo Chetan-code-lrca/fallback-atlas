@@ -15,9 +15,25 @@ Important: RSSI describes how strongly the phone hears an access point. It does 
 
 ## Build
 
-Open the android directory in Android Studio and let Gradle sync. Use JDK 17 and Android SDK Platform 35. Connect an Android 11+ phone or use an emulator with Wi-Fi scan support, then run the app configuration.
+The project commits the Gradle 8.9 wrapper so local builds and CI use the same Gradle distribution. Use JDK 17 and Android SDK Platform 35.
 
-The GitHub Actions workflow also builds a debug APK and uploads it as an artifact for testing.
+From the repository root, run scanner unit tests and build the debug APK:
+
+```bash
+cd android
+./gradlew --no-daemon testDebugUnitTest assembleDebug
+```
+
+On Windows PowerShell:
+
+```powershell
+cd android
+.\gradlew.bat --no-daemon testDebugUnitTest assembleDebug
+```
+
+Open the android directory in Android Studio and sync using the committed wrapper. Connect an Android 11+ phone or use an emulator with Wi-Fi scan support to try an actual scan. JVM tests cover the existing SSID filtering, age/freshness, deduplication, security, band and signal-label rules without requiring a device or emulator.
+
+The GitHub Actions workflow runs the JVM unit tests first, then builds a debug APK and uploads it as a 14-day artifact for testing.
 
 ## Permissions
 
