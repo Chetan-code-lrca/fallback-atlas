@@ -248,8 +248,11 @@ test('location lookup discloses coordinate transfer and asks for a public area b
   });
 
   const { container } = render(<App />);
-  expect(container.querySelector('.location-permission-note').textContent)
-    .toContain('browser coordinates to Fallback Atlas');
+  const locationDisclosure = container.querySelector('#location-permission-note');
+  const locationButton = buttonContaining(container, 'Use my location');
+  expect(locationDisclosure.textContent).toContain('browser coordinates to Fallback Atlas');
+  expect(locationButton.getAttribute('aria-describedby')).toBe('location-permission-note');
+  expect(locationDisclosure.compareDocumentPosition(locationButton) & 4).toBe(4);
 
   await act(async () => {
     fireEvent.click(buttonContaining(container, 'Use my location'));
