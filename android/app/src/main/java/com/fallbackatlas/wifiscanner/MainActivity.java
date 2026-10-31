@@ -292,13 +292,12 @@ public class MainActivity extends Activity {
         long nowMillis = System.currentTimeMillis();
         Map<String, NetworkObservation> unique = new HashMap<>();
         for (ScanResult item : scanResults) {
-            String ssid = item.SSID == null ? "" : item.SSID.trim();
-            if (ssid.isEmpty() || ssid.length() > 32) continue;
-            long ageMicros = item.timestamp > 0 ? Math.max(0L, elapsedMicros - item.timestamp) : Long.MAX_VALUE;
-            long ageSeconds = ageMicros == Long.MAX_VALUE ? Long.MAX_VALUE : ageMicros / 1_000_000L;
-            String key = ssid.toLowerCase(Locale.ROOT) + "|" + item.frequency;
+            String ssid = WifiScanUtils.visibleSsid(item.SSID);
+            if (ssid == null) continue;
+            long ageSeconds = WifiScanUtils.ageSeconds(elapsedMicros, item.timestamp);
+            String key = WifiScanUtils.deduplicationKey(ssid, item.frequency);
             NetworkObservation observation = new NetworkObservation(
-                ssid, item.level, item.frequency, securityLabel(item.capabilities),
+                ssid, item.level, item.frequency, WifiScanUtils.securityLabel(item.capabilities),
                 ageSeconds == Long.MAX_VALUE ? 0L : nowMillis - ageSeconds * 1000L,
                 ageSeconds
             );
@@ -309,7 +308,7 @@ public class MainActivity extends Activity {
         observations.clear();
         observations.addAll(unique.values());
         observations.sort(Comparator.comparingInt((NetworkObservation item) -> item.signalDbm).reversed());
-        lastScanWasFresh = !observations.isEmpty() && observations.stream().allMatch(item -> item.ageSeconds <= 120L);
+        lastScanWasFresh = !observations.isEmpty() && observations.stream().allMatch(item -> WifiScanUtils.isFreshForSharing(item.ageSeconds));
         shareButton.setEnabled(lastScanWasFresh);
         renderNetworkRows();
 
@@ -346,13 +345,13 @@ public class MainActivity extends Activity {
 
             TextView name = text(item.networkName, 17, Color.rgb(18, 40, 58), true);
             card.addView(name);
-            String detail = String.format(Locale.ROOT, "%d dBm  ·  %s  ·  %s", item.signalDbm, bandLabel(item.frequencyMhz), item.security);
+            String detail = String.format(Locale.ROOT, "%d dBm  ·  %s  ·  %s", item.signalDbm, WifiScanUtils.bandLabel(item.frequencyMhz), item.security);
             TextView details = text(detail, 13, Color.rgb(82, 101, 119), false);
             LinearLayout.LayoutParams detailParams = params(-1, -2);
             detailParams.topMargin = dp(4);
             card.addView(details, detailParams);
-            TextView strength = text(signalLabel(item.signalDbm) + " signal  ·  " + ageLabel(item.ageSeconds), 12,
-                item.ageSeconds <= 120L ? Color.rgb(8, 126, 128) : Color.rgb(183, 122, 25), true);
+            TextView strength = text(WifiScanUtils.signalLabel(item.signalDbm) + " signal  ·  " + WifiScanUtils.ageLabel(item.ageSeconds), 12,
+                WifiScanUtils.isFreshForSharing(item.ageSeconds) ? Color.rgb(8, 126, 128) : Color.rgb(183, 122, 25), true);
             LinearLayout.LayoutParams strengthParams = params(-1, -2);
             strengthParams.topMargin = dp(6);
             card.addView(strength, strengthParams);
@@ -423,7 +422,7 @@ public class MainActivity extends Activity {
     private void uploadScan(String area, Location location) {
         JSONArray networks = new JSONArray();
         for (NetworkObservation item : observations) {
-            if (item.ageSeconds > 120L) continue;
+            if (!WifiScanUtils.isFreshForSharing(item.ageSeconds)) continue;
             JSONObject network = new JSONObject();
             try {
                 network.put("networkName", item.networkName);
@@ -538,35 +537,6 @@ public class MainActivity extends Activity {
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private String securityLabel(String caps) {
-        String value = caps == null ? "" : caps.toUpperCase(Locale.ROOT);
-        if (value.contains("SAE")) return "WPA3";
-        if (value.contains("EAP")) return "Enterprise";
-        if (value.contains("WPA")) return "WPA/WPA2";
-        if (value.contains("WEP")) return "WEP";
-        return "Open/unknown";
-    }
-
-    private String bandLabel(int frequencyMhz) {
-        if (frequencyMhz >= 5925) return "6 GHz";
-        if (frequencyMhz >= 4900) return "5 GHz";
-        return "2.4 GHz";
-    }
-
-    private String signalLabel(int rssi) {
-        if (rssi >= -55) return "Very good";
-        if (rssi >= -67) return "Good";
-        if (rssi >= -75) return "Fair";
-        return "Weak";
-    }
-
-    private String ageLabel(long seconds) {
-        if (seconds == Long.MAX_VALUE) return "unknown age";
-        if (seconds < 5) return "just scanned";
-        if (seconds < 60) return seconds + " sec ago";
-        return (seconds / 60) + " min ago";
     }
 
     private static final class NetworkObservation {
