@@ -423,6 +423,28 @@ test('connectivity ingestion overwrites one row per area and service', async () 
   assert.equal(state.tables.ConnectivityStatus.length, 1);
 });
 
+test('connectivity ingestion accepts a newer offline-queued state transition', async () => {
+  enableConnectivityPilot();
+  const first = await invoke('connectivity-observations', 'POST',
+    'connectivity-observations', validConnectivityObservation());
+  assert.equal(first.status, 201);
+
+  const stored = state.tables.ConnectivityStatus[0];
+  stored.updatedAt = new Date(Date.now() - 1000).toISOString();
+  stored.observedAt = new Date(Date.now() - 60 * 1000).toISOString();
+
+  const changed = await invoke('connectivity-observations', 'POST',
+    'connectivity-observations',
+    validConnectivityObservation({
+      status: 'degraded',
+      internetValidated: false,
+      observedAt: new Date().toISOString()
+    }));
+  assert.equal(changed.status, 201);
+  assert.equal(state.tables.ConnectivityStatus.length, 1);
+  assert.equal(state.tables.ConnectivityStatus[0].status, 'degraded');
+});
+
 test('connectivity observations GET returns only fresh status for the requested area', async () => {
   enableConnectivityPilot();
   const areaKey = areaKeyFor('SPSU campus, Udaipur');
