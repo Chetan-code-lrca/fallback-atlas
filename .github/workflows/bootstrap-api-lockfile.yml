@@ -1,0 +1,41 @@
+name: Temporary API lockfile bootstrap
+
+on:
+  push:
+    branches:
+      - fix/wifi-observation-source-label
+    paths:
+      - ".github/workflows/bootstrap-api-lockfile.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  generate-api-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/wifi-observation-source-label
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate API package lock
+        working-directory: api
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Commit generated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/package-lock.json
+          if git diff --cached --quiet; then
+            echo "No lockfile change was generated."
+            exit 1
+          fi
+          git commit -m "chore(deps): add API npm lockfile"
+          git push origin HEAD:fix/wifi-observation-source-label
