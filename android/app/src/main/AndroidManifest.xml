@@ -12,7 +12,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Fallback Atlas Wi-Fi"
+        android:label="Fallback Atlas"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
