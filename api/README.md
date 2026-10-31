@@ -11,6 +11,8 @@ This directory contains the Node.js 22 Azure Functions v4 HTTP API deployed as t
 | POST /api/reports | Validates and stores a community outage report | Yes |
 | GET /api/wifi-scans | Reads recent nearby Wi-Fi observations | Yes |
 | POST /api/wifi-scans | Validates and stores explicitly shared scanner observations | Yes |
+| GET /api/connectivity-observations | Reads recent Android connectivity status for an allowlisted area | Yes, once the pilot is enabled |
+| POST /api/connectivity-observations | Upserts the latest Wi-Fi/mobile-data internet status | Yes, restricted pilot only |
 
 All routes accept and return JSON. The API does not provide user authentication. Data submitted to shared endpoints is visible to website users according to the corresponding feed filters.
 
@@ -22,13 +24,17 @@ Configure these values in Azure Static Web Apps application settings for deploym
 | --- | --- | --- |
 | FUNCTIONS_WORKER_RUNTIME | Yes for local Functions | Set to node. Azure manages the runtime setting in the deployed service. |
 | AzureWebJobsStorage | Local Functions host | Azure Functions host storage. Use an Azurite development connection for local host storage, or an authorised Storage account connection string. |
-| REPORTS_STORAGE_CONNECTION_STRING | Optional for local-only mode; required for shared data | Server-side Azure Table Storage connection string used for both Reports and WifiScans tables. |
+| REPORTS_STORAGE_CONNECTION_STRING | Optional for local-only mode; required for shared data | Server-side Azure Table Storage connection string used for Reports, WifiScans and (only when enabled) ConnectivityStatus. |
+| CONNECTIVITY_INGEST_ENABLED | Optional; defaults to disabled | Set to the exact string `true` only when starting a controlled Android connectivity pilot. |
+| CONNECTIVITY_ALLOWED_AREAS | Required to enable ingestion | Semicolon-separated exact public area labels. Example: `SPSU campus, Udaipur;Udaipur City`. Only these normalised labels can write connectivity status. |
 
 Never put a storage connection string in frontend configuration, React environment variables, source code, screenshots, or committed files. The repository ignores api/local.settings.json; start from api/local.settings.example.json and keep the populated local file untracked.
 
 ### Storage behavior
 
-The API creates the Reports and WifiScans tables when it first connects. If REPORTS_STORAGE_CONNECTION_STRING is missing, GET /api/health returns mode=local and report/Wi-Fi storage endpoints return HTTP 503 with a storage_not_configured error. The frontend can then preserve outage reports in its browser-local queue; these reports are not shared with other visitors.
+The API creates the Reports and WifiScans tables when it first connects. The ConnectivityStatus table is not created while the connectivity pilot is disabled; after enabling, it is created on the first allowlisted read or write. If REPORTS_STORAGE_CONNECTION_STRING is missing, GET /api/health returns mode=local and shared storage endpoints return HTTP 503. The frontend can preserve outage reports in its browser-local queue; these reports are not shared with other visitors.
+
+Connectivity ingestion is disabled by default. The feature flag and area allowlist are a pilot boundary, not authentication: a client can still spoof a report for an allowlisted area. Keep the allowlist small, monitor writes and costs, and do not treat the endpoint as ready for unrestricted public traffic.
 
 ## Local development
 
@@ -229,3 +235,47 @@ Duplicate SSID/frequency pairs in one request are dropped. Success returns HTTP 
 The scanners do not intentionally upload BSSIDs/MAC addresses, passwords, or device identifiers. Wi-Fi submissions still expose SSIDs, signal metadata, timestamps and approximate coordinates to people using the public nearby feed. Do not upload private network names or locations you are not authorised to disclose.
 
 Community reports are not official utility telemetry. Wi-Fi signal does not prove internet availability. Anonymous endpoints, per-area thresholds, and feed time windows are not a substitute for authentication, moderation, global abuse protection, monitoring, or a physical data-retention process. See the repository's SECURITY.md and docs/COST_AND_GOVERNANCE.md before enabling shared storage.
+
+
+### GET /api/connectivity-observations
+
+Required query parameter: `area` (up to 120 characters).
+
+Example:
+
+```http
+GET /api/connectivity-observations?area=SPSU%20campus%2C%20Udaipur
+```
+
+When the connectivity pilot is disabled or the area is not allowlisted, the route returns HTTP 200 with `ingestionEnabled=false` and an empty `observations` array. This avoids creating the additional Table while the feature is off.
+
+When the area is enabled, the route returns only statuses observed within the last 15 minutes. Each item is labelled as an Android connectivity-agent observation, not independently verified provider telemetry.
+
+### POST /api/connectivity-observations
+
+This anonymous endpoint is **disabled unless** `CONNECTIVITY_INGEST_ENABLED=true` and the submitted area exactly matches one of the semicolon-separated `CONNECTIVITY_ALLOWED_AREAS` labels after normalisation. Do not enable it for unrestricted public use.
+
+Example body:
+
+```json
+{
+  "area": "SPSU campus, Udaipur",
+  "observation": {
+    "service": "wifi",
+    "status": "working",
+    "internetValidated": true,
+    "observedAt": "2026-10-31T14:30:00.000Z"
+  }
+}
+```
+
+Fields:
+- area: required public pilot label, maximum 120 characters and must be allowlisted.
+- observation.service: `wifi` or `mobile-data`.
+- observation.status: `working`, `degraded` or `down`.
+- observation.internetValidated: boolean from Android's network capability state. A `working` state requires true.
+- observation.observedAt: timestamp no more than two minutes in the future and no older than 15 minutes.
+
+The API accepts at most 8 KB. Each allowlisted area has one replaceable row for Wi-Fi and one for mobile data. Repeated identical updates within five minutes do not cause another write; rapid state changes are throttled. The API does not store a device identifier, SSID, GPS coordinate or event history for this endpoint. Old statuses are hidden after 15 minutes but their two fixed Table rows remain until overwritten; this is bounded pilot storage, not physical deletion.
+
+The endpoint remains anonymous. An allowlist constrains the number of rows and write scope but does not prove that an observation really came from the Android app. A malicious client could spoof a status for an allowlisted area. Use only with known testers until stronger authentication and abuse controls are deployed.
