@@ -428,4 +428,4 @@ html[data-theme="dark"] .wifi-signal-weak{color:#ff9598;background:#341f24;borde
 .atlas-wifi-popup p{margin:6px 0;color:#526777;font-size:11px;line-height:1.5}
 .atlas-wifi-popup small{display:block;max-width:240px;color:#526777;font-size:10px;line-height:1.45}
 html[data-theme="dark"] .wifi-feed-controls select{color:var(--ink);background:var(--paper);border-color:var(--line)}
-@media(max-width:760px){.wifi-network-list{grid-template-columns:1fr}.wifi-feed-controls{width:100%}.wifi-feed-controls .button{flex:1}.wifi-feed-controls label{justify-content:space-between;flex:1}.wifi-feed-controls .location-permission-note{flex-basis:100%}}
+@media(max-width:760px){.wifi-network-list{grid-template-columns:1fr}.wifi-feed-controls{width:100%}.wifi-feed-controls .button{flex:1}.wifi-feed-controls label{justify-content:space-between;flex:1}.wifi-feed-toolbar .location-permission-note{flex-basis:100%}}
