@@ -149,12 +149,13 @@ function validWifiScan(overrides = {}) {
 
 beforeEach(resetState);
 
-test('health reports local mode when shared storage is not configured', async () => {
-  delete process.env.REPORTS_STORAGE_CONNECTION_STRING;
-  const result = await invoke('health', 'GET', 'health');
-  assert.equal(result.status, 200);
-  assert.equal(result.jsonBody.mode, 'local');
+test('health returns bounded diagnostics when storage initialization fails', async () => {
+  state.createTableErrors.Reports = true;
+  const result = await invoke('health', 'GET', 'health?diagnostics=1');
+  assert.equal(result.status, 503);
+  assert.equal(result.jsonBody.mode, 'unavailable');
   assert.equal(result.jsonBody.sharedReportsConfigured, false);
+  assert.match(result.jsonBody.message, /not reachable/i);
 });
 
 test('health reports shared mode when the Reports table is reachable', async () => {
@@ -164,13 +165,12 @@ test('health reports shared mode when the Reports table is reachable', async () 
   assert.equal(result.jsonBody.sharedReportsConfigured, true);
 });
 
-test('health returns bounded diagnostics when storage initialization fails', async () => {
-  state.createTableErrors.Reports = true;
-  const result = await invoke('health', 'GET', 'health?diagnostics=1');
-  assert.equal(result.status, 503);
-  assert.equal(result.jsonBody.mode, 'unavailable');
+test('health reports local mode when shared storage is not configured', async () => {
+  delete process.env.REPORTS_STORAGE_CONNECTION_STRING;
+  const result = await invoke('health', 'GET', 'health');
+  assert.equal(result.status, 200);
+  assert.equal(result.jsonBody.mode, 'local');
   assert.equal(result.jsonBody.sharedReportsConfigured, false);
-  assert.match(result.jsonBody.message, /not reachable/i);
 });
 
 test('reports POST stores a valid report and GET returns it', async () => {
