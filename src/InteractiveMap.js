@@ -60,7 +60,7 @@ function addSampleMarkers(map, maplibre, markerRefs) {
     markerRefs.current.push(marker);
   });
 }
-function createWifiPopupContent(point) {
+export function createWifiPopupContent(point) {
   const content = document.createElement('div');
   content.className = 'atlas-wifi-popup';
   const title = document.createElement('strong');
@@ -72,7 +72,10 @@ function createWifiPopupContent(point) {
   const area = document.createElement('p');
   area.textContent = point.area || 'Approximate scan area';
   const disclaimer = document.createElement('small');
-  disclaimer.textContent = 'Detected by an Android device. Signal strength does not confirm internet availability.';
+  const sourceLabel = point.signalType === 'windows-percent-estimate'
+    ? 'Detected by a Windows device.'
+    : 'Detected by an Android device.';
+  disclaimer.textContent = sourceLabel + ' Signal strength does not confirm internet availability.';
   content.append(title, details, area, disclaimer);
   return content;
 }
