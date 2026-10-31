@@ -590,6 +590,10 @@ app.http('connectivity-observations', {
         return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
       }
 
+      if (Buffer.byteLength(JSON.stringify(input), 'utf8') > 8192) {
+        return response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under 8 KB.' });
+      }
+
       const validation = validateConnectivityObservationInput(input);
       if (!validation.ok) {
         return response(400, { error: 'invalid_observation', message: validation.error });
@@ -640,7 +644,12 @@ app.http('connectivity-observations', {
             });
           }
 
-          if (!sameState && ageMs < CONNECTIVITY_MIN_CHANGE_INTERVAL_MS) {
+          const previousObservedAt = Date.parse(String(existing.observedAt || ''));
+          const observationDelta = Number.isFinite(previousObservedAt)
+            ? Date.parse(observation.observedAt) - previousObservedAt
+            : Infinity;
+          if (!sameState && ageMs < CONNECTIVITY_MIN_CHANGE_INTERVAL_MS &&
+              observationDelta < CONNECTIVITY_MIN_CHANGE_INTERVAL_MS) {
             return response(429, {
               error: 'observation_rate_limited',
               message: 'A connectivity status change was received too soon after the previous update.'
