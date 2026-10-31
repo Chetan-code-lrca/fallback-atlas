@@ -9,6 +9,7 @@ jest.mock('./geocoding', () => ({
 }));
 
 const originalFetch = global.fetch;
+const originalGeolocationDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'geolocation');
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -32,6 +33,8 @@ afterEach(() => {
   cleanup();
   global.fetch = originalFetch;
   window.fetch = originalFetch;
+  if (originalGeolocationDescriptor) Object.defineProperty(window.navigator, 'geolocation', originalGeolocationDescriptor);
+  else delete window.navigator.geolocation;
 });
 
 function buttonContaining(container, text) {
@@ -47,7 +50,7 @@ function submitLocation(container, value) {
 
 test('defaults to Udaipur and labels demo markers clearly', () => {
   const { container } = render(<App />);
-  expect(container.querySelector('h1').textContent).toContain('works.');
+  expect(container.querySelector('h1').textContent).toContain('Know what still works.');
   expect(container.querySelector('.section-heading h2').textContent).toBe('Udaipur, Rajasthan');
   expect(container.querySelector('.panel-heading h3').textContent).toContain('Udaipur');
   expect(container.querySelector('.live-map').getAttribute('aria-label')).toContain('Udaipur, Rajasthan');
@@ -194,4 +197,71 @@ test('Wi-Fi observations are separate from manually entered service reports', ()
   expect(services).not.toContain('Campus Wi-Fi');
   expect(container.querySelector('.campus-wifi-panel')).not.toBeNull();
   expect(container.querySelector('.campus-wifi-panel').textContent).toContain('No guessed SSIDs');
+});
+
+test('report coordinates are excluded unless the user explicitly opts in', async () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Share a report'));
+  const consent = container.querySelector('#include-report-coordinates');
+  expect(consent).not.toBeNull();
+  expect(consent.checked).toBe(false);
+
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Submit report'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const postCall = global.fetch.mock.calls.find(([url, options]) =>
+    url === '/api/reports' && options && options.method === 'POST'
+  );
+  expect(postCall).toBeDefined();
+  const payload = JSON.parse(postCall[1].body);
+  expect(payload).not.toHaveProperty('latitude');
+  expect(payload).not.toHaveProperty('longitude');
+});
+
+test('explicit coordinate consent includes rounded map coordinates with a report', async () => {
+  const { container } = render(<App />);
+  fireEvent.click(buttonContaining(container, 'Share a report'));
+  fireEvent.click(container.querySelector('#include-report-coordinates'));
+
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Submit report'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const postCall = global.fetch.mock.calls.find(([url, options]) =>
+    url === '/api/reports' && options && options.method === 'POST'
+  );
+  const payload = JSON.parse(postCall[1].body);
+  expect(payload.latitude).toBe(24.582);
+  expect(payload.longitude).toBe(73.686);
+});
+
+test('location lookup discloses coordinate transfer and asks for a public area before reporting', async () => {
+  Object.defineProperty(window.navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition: jest.fn((onSuccess) => onSuccess({
+        coords: { latitude: 24.6, longitude: 73.7 }
+      }))
+    }
+  });
+
+  const { container } = render(<App />);
+  expect(container.querySelector('.location-permission-note').textContent)
+    .toContain('browser coordinates to Fallback Atlas');
+
+  await act(async () => {
+    fireEvent.click(buttonContaining(container, 'Use my location'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(global.fetch.mock.calls.some(([url]) =>
+    typeof url === 'string' && url.includes('latitude=24.6') && url.includes('longitude=73.7')
+  )).toBe(true);
+
+  fireEvent.click(buttonContaining(container, 'Share a report'));
+  expect(container.querySelector('#report-area').value).toBe('');
+  expect(container.querySelector('#include-report-coordinates').checked).toBe(false);
 });
