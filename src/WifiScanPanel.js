@@ -69,18 +69,19 @@ export default function WifiScanPanel({
   }, [areaSelected, center, radiusKm, refreshToken, onObservationsChange]);
 
   return (
-    <section className="campus-wifi-panel panel" id="campus-wifi" aria-labelledby="wifi-scan-title">
+    <section className="campus-wifi-panel panel" id="nearby-wifi" aria-labelledby="wifi-scan-title">
       <div className="campus-wifi-heading">
         <div>
           <span className="section-kicker">REAL DEVICE OBSERVATIONS</span>
           <h2 id="wifi-scan-title">Nearby Wi-Fi, actually observed</h2>
-          <p>Access points appear here only after an Android device detects them and the user explicitly shares a scan. No guessed SSIDs. No fake “healthy” result.</p>
+          <p>Access points appear here only after an Android or Windows device detects them and the user explicitly shares a scan. No guessed SSIDs. No fake “healthy” result.</p>
         </div>
         <span className="campus-badge"><span className="campus-badge-dot" /> Azure scan feed</span>
       </div>
       <div className="wifi-feed-toolbar">
+        <p id="location-permission-note" className="location-permission-note">Using your location sends your browser coordinates to Fallback Atlas to look up nearby community reports and shared Wi-Fi observations. It does not submit an outage report.</p>
         <div className="wifi-feed-controls">
-          <button type="button" className="button button-teal" onClick={onUseLocation} disabled={locationPending}>
+          <button type="button" className="button button-teal" onClick={onUseLocation} aria-describedby="location-permission-note" disabled={locationPending}>
             {locationPending ? 'Finding location…' : '⌖ Use my location'}
           </button>
           <label>Search radius
@@ -90,7 +91,7 @@ export default function WifiScanPanel({
           </label>
           <button type="button" className="refresh-button" onClick={onRefresh} disabled={!areaSelected} aria-label="Refresh nearby Wi-Fi scan observations">↻ Refresh</button>
         </div>
-        <a className="speedtest-link" href="https://github.com/Chetan-code-lrca/fallback-atlas/tree/main/android" target="_blank" rel="noreferrer">Open the Android scanner source ↗</a>
+        <a className="speedtest-link" href="https://github.com/Chetan-code-lrca/fallback-atlas#companion-wi-fi-scanners" target="_blank" rel="noreferrer">Scanner setup: Android + Windows ↗</a>
       </div>
       <div className="wifi-feed-results" aria-live="polite">
         {viewState === 'needs-location' && <div className="wifi-feed-empty"><strong>Select an area to see nearby scan observations.</strong><p>Choose “Use my location” or search a place. This website does not have access to your phone’s Wi-Fi radio scan list.</p></div>}

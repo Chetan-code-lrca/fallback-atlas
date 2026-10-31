@@ -22,6 +22,7 @@ Fallback Atlas is an open-source, community-powered web application for sharing 
 - **Real nearby Wi-Fi observations:** Android and Windows companion scanners detect nearby access points. The website itself cannot scan the device's Wi-Fi radio.
 - **Explicit sharing:** scanners show selected SSIDs and require user confirmation before uploading an observation snapshot.
 - **Privacy-aware payloads:** scanners are designed not to upload passwords, BSSIDs/MAC addresses or device identifiers. SSIDs and approximate coordinates can still be sensitive.
+- **Location and report consent:** using “Use my location” sends browser coordinates to the API for nearby lookups; it does not submit a report. Report coordinates are a separate opt-in, off by default, and rounded to three decimal places when shared.
 - **Offline app shell:** after a successful online visit and service-worker installation, the app shell can reopen and outage reports can be queued locally. Map tiles, search and shared APIs still need connectivity.
 - **Local fallback:** when the API is not configured or cannot be reached, reports are kept in the browser and shown as local/pending rather than falsely presented as shared.
 

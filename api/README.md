@@ -158,7 +158,7 @@ Fields:
 - status: required; working, degraded, or down.
 - note: optional string, maximum 280 characters.
 - observedAt: optional parseable timestamp; defaults to server time and cannot be more than five minutes in the future or older than 30 days.
-- latitude and longitude: optional pair of numeric coordinates within valid geographic ranges.
+- latitude and longitude: optional pair of numeric coordinates within valid geographic ranges. The web form includes them only after explicit user opt-in and rounds them to three decimal places before sending.
 
 Success returns HTTP 201 with mode=shared and the stored report. The current pilot threshold is 30 reports per normalized area in a rolling 10-minute window. This is not a global abuse limit; area labels are user-controlled and concurrent submissions may race.
 
