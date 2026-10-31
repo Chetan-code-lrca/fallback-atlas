@@ -83,3 +83,14 @@ The service worker caches the same-origin app shell and static assets. It delibe
 ## Deployment
 
 The Azure Static Web Apps workflow builds the root React application, deploys the build/ output, and deploys the api/ directory as managed Functions. The API runtime is configured as Node.js 22 in staticwebapp.config.json. The Android workflow independently builds a debug APK using JDK 17 and Android SDK Platform 35.
+
+
+## Android connectivity agent (restricted pilot)
+
+The Android companion can opt in to monitor Wi-Fi and cellular network capability changes while its activity is visible. It maps Android's internet/validated capabilities to `working`, `degraded` or `down` observations. It does not request location for this monitor and does not inspect SSIDs, BSSIDs, device IDs or traffic contents.
+
+Each observation contains only a public area label, transport (`wifi` or `mobile-data`), status, validated-internet boolean and timestamp. When offline, the app keeps one pending observation per transport in local preferences and attempts upload after a validated network returns. Monitoring unregisters callbacks when the activity leaves the foreground; this is deliberately not an always-on background service.
+
+The API accepts the observation only when `CONNECTIVITY_INGEST_ENABLED=true` and the area is included in `CONNECTIVITY_ALLOWED_AREAS`. It stores a replaceable row keyed by (normalised area, transport) in the existing Storage account's `ConnectivityStatus` table. Thus each configured pilot area has at most two rows. The website hides observations older than 15 minutes. This visibility window is not a physical deletion guarantee, although overwrite-only storage bounds growth.
+
+The endpoint is anonymous. The allowlist reduces the write surface and cost exposure but does not authenticate the Android binary or prove that a report is genuine. The pilot UI must label these as device observations, not official or independently verified provider measurements.
