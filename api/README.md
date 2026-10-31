@@ -44,9 +44,9 @@ The API creates the Reports and WifiScans tables when it first connects. If REPO
 From the repository root:
 
 ```bash
-npm install
+npm ci
 cd api
-npm install
+npm ci
 cd ..
 npm install --global @azure/static-web-apps-cli
 ```

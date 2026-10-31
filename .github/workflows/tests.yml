@@ -19,11 +19,13 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install frontend dependencies from lockfile
+        run: npm ci --no-audit --no-fund
+      - name: Install API dependencies from lockfile
+        run: npm ci --prefix api --no-audit --no-fund
       - name: Run frontend tests
         run: npm test -- --watchAll=false --runInBand
       - name: Build production frontend
         run: npm run build
-      - name: Run Azure Functions API unit tests
-        run: node --test api/test/*.test.js
+      - name: Run Azure Functions API tests
+        run: npm --prefix api test
