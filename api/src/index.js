@@ -10,6 +10,7 @@ const {
   validateReportInput
 } = require('./report-utils');
 const { validateWifiScanInput, toApiWifiScan } = require('./wifi-scan-utils');
+const { validateConnectivityObservationInput, toApiConnectivityObservation } = require('./connectivity-observation-utils');
 
 const TABLE_NAME = 'Reports';
 const REPORTS_PARTITION = 'reports';
@@ -461,6 +462,226 @@ app.http('wifi-scans', {
         }
         context.error('Fallback Atlas failed to save Wi-Fi scan observations.');
         return response(503, { error: 'write_failed', message: 'The scan was not shared because storage was unavailable.' });
+      }
+    }
+
+    return response(405, { error: 'method_not_allowed' });
+  }
+});
+
+
+// Compact, overwrite-only connectivity state: at most one row per allowed area and transport.
+const CONNECTIVITY_TABLE_NAME = 'ConnectivityStatus';
+const CONNECTIVITY_FRESHNESS_MS = 15 * 60 * 1000;
+const CONNECTIVITY_MIN_CHANGE_INTERVAL_MS = 30 * 1000;
+const CONNECTIVITY_SAME_STATE_REFRESH_MS = 5 * 60 * 1000;
+let connectivityTableClientPromise;
+
+function getConnectivityTableClient() {
+  const connectionString = process.env.REPORTS_STORAGE_CONNECTION_STRING;
+  if (!connectionString) {
+    const error = new Error('Shared connectivity storage has not been configured.');
+    error.code = 'STORAGE_NOT_CONFIGURED';
+    throw error;
+  }
+  if (!connectivityTableClientPromise) {
+    const table = TableClient.fromConnectionString(connectionString, CONNECTIVITY_TABLE_NAME);
+    connectivityTableClientPromise = table.createTable()
+      .then(() => table)
+      .catch((error) => {
+        if (error.statusCode === 409 || error.code === 'TableAlreadyExists') return table;
+        connectivityTableClientPromise = undefined;
+        throw error;
+      });
+  }
+  return connectivityTableClientPromise;
+}
+
+function isConnectivityAreaAllowed(area) {
+  const allowed = String(process.env.CONNECTIVITY_ALLOWED_AREAS || '')
+    .split(';')
+    .map((value) => normalizeArea(value))
+    .filter(Boolean);
+  return allowed.length > 0 && allowed.includes(normalizeArea(area));
+}
+
+app.http('connectivity-observations', {
+  methods: ['GET', 'POST'],
+  authLevel: 'anonymous',
+  route: 'connectivity-observations',
+  handler: async (request, context) => {
+    if (request.method === 'GET') {
+      const params = new URL(request.url).searchParams;
+      const area = String(params.get('area') || '').trim();
+      if (!area || area.length > 120) {
+        return response(400, {
+          error: 'invalid_area',
+          message: 'Provide a public area label up to 120 characters long.'
+        });
+      }
+
+      // Do not even create the additional Table when the restricted pilot is off.
+      if (process.env.CONNECTIVITY_INGEST_ENABLED !== 'true' || !isConnectivityAreaAllowed(area)) {
+        return response(200, {
+          mode: 'pilot-disabled',
+          freshnessMinutes: 15,
+          ingestionEnabled: false,
+          observations: []
+        });
+      }
+
+      let table;
+      try {
+        table = await getConnectivityTableClient();
+      } catch (error) {
+        if (error.code === 'STORAGE_NOT_CONFIGURED') {
+          return response(503, { error: 'storage_not_configured', message: 'Shared connectivity storage is not configured.' });
+        }
+        context.error('Fallback Atlas could not connect to connectivity status storage.');
+        return response(503, { error: 'storage_unavailable', message: 'Connectivity observations are temporarily unavailable.' });
+      }
+
+      try {
+        const areaKey = areaKeyFor(area);
+        const filter = "PartitionKey eq '" + areaKey + "'";
+        const observations = [];
+        const now = Date.now();
+        for await (const entity of table.listEntities({ queryOptions: { filter } })) {
+          const observedAt = Date.parse(String(entity.observedAt || ''));
+          if (!Number.isFinite(observedAt) || now - observedAt > CONNECTIVITY_FRESHNESS_MS) continue;
+          observations.push(toApiConnectivityObservation(entity));
+          if (observations.length >= 2) break;
+        }
+        observations.sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt));
+        return response(200, {
+          mode: 'shared',
+          freshnessMinutes: 15,
+          ingestionEnabled: true,
+          observations
+        });
+      } catch (error) {
+        context.error('Fallback Atlas failed to query connectivity status.');
+        return response(503, {
+          error: 'query_failed',
+          message: 'Automated connectivity status could not be loaded.'
+        });
+      }
+    }
+
+    if (request.method === 'POST') {
+      if (process.env.CONNECTIVITY_INGEST_ENABLED !== 'true') {
+        return response(503, {
+          error: 'connectivity_ingest_disabled',
+          message: 'Automated connectivity sharing is disabled until a restricted pilot area is configured.'
+        });
+      }
+
+      const contentLength = Number(request.headers && request.headers.get
+        ? request.headers.get('content-length') || 0
+        : 0);
+      if (Number.isFinite(contentLength) && contentLength > 8192) {
+        return response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under 8 KB.' });
+      }
+
+      let input;
+      try {
+        input = await request.json();
+      } catch (error) {
+        return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
+      }
+
+      if (Buffer.byteLength(JSON.stringify(input), 'utf8') > 8192) {
+        return response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under 8 KB.' });
+      }
+
+      const validation = validateConnectivityObservationInput(input);
+      if (!validation.ok) {
+        return response(400, { error: 'invalid_observation', message: validation.error });
+      }
+      const { area, areaKey, observation } = validation.value;
+
+      if (!isConnectivityAreaAllowed(area)) {
+        return response(403, {
+          error: 'area_not_in_pilot',
+          message: 'This area is not enabled for the restricted connectivity pilot.'
+        });
+      }
+
+      let table;
+      try {
+        table = await getConnectivityTableClient();
+      } catch (error) {
+        if (error.code === 'STORAGE_NOT_CONFIGURED') {
+          return response(503, { error: 'storage_not_configured', message: 'Shared connectivity storage is not configured.' });
+        }
+        context.error('Fallback Atlas could not connect to connectivity status storage.');
+        return response(503, { error: 'storage_unavailable', message: 'Connectivity observations are temporarily unavailable.' });
+      }
+
+      try {
+        const now = new Date();
+        const rowKey = observation.service;
+        let existing = null;
+        try {
+          existing = await table.getEntity(areaKey, rowKey);
+        } catch (error) {
+          if (error.statusCode !== 404 && error.code !== 'ResourceNotFound') throw error;
+        }
+
+        if (existing) {
+          const updatedAt = Date.parse(String(existing.updatedAt || ''));
+          const sameState = existing.status === observation.status &&
+            existing.internetValidated === observation.internetValidated;
+          const ageMs = Number.isFinite(updatedAt) ? now.getTime() - updatedAt : Infinity;
+
+          if (sameState && ageMs < CONNECTIVITY_SAME_STATE_REFRESH_MS) {
+            return response(200, {
+              mode: 'shared',
+              accepted: 0,
+              unchanged: true,
+              freshnessMinutes: 15,
+              message: 'The existing connectivity status is still current; no storage write was needed.'
+            });
+          }
+
+          const previousObservedAt = Date.parse(String(existing.observedAt || ''));
+          const observationDelta = Number.isFinite(previousObservedAt)
+            ? Date.parse(observation.observedAt) - previousObservedAt
+            : Infinity;
+          if (!sameState && ageMs < CONNECTIVITY_MIN_CHANGE_INTERVAL_MS &&
+              observationDelta < CONNECTIVITY_MIN_CHANGE_INTERVAL_MS) {
+            return response(429, {
+              error: 'observation_rate_limited',
+              message: 'A connectivity status change was received too soon after the previous update.'
+            });
+          }
+        }
+
+        const entity = {
+          partitionKey: areaKey,
+          rowKey,
+          area,
+          service: observation.service,
+          status: observation.status,
+          internetValidated: observation.internetValidated,
+          observedAt: observation.observedAt,
+          updatedAt: now.toISOString(),
+          source: 'android-connectivity-agent'
+        };
+        await table.upsertEntity(entity, 'Replace');
+
+        return response(201, {
+          mode: 'shared',
+          accepted: 1,
+          observation: toApiConnectivityObservation(entity),
+          message: 'Latest connectivity status saved. This is an Android device observation, not an official provider measurement.'
+        });
+      } catch (error) {
+        context.error('Fallback Atlas failed to save a connectivity observation.');
+        return response(503, {
+          error: 'write_failed',
+          message: 'The connectivity observation was not shared because storage is unavailable.'
+        });
       }
     }
 

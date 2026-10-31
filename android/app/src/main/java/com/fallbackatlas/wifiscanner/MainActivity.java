@@ -9,12 +9,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
+import android.text.InputFilter;
 import android.location.Location;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.CancellationSignal;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -53,6 +57,11 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WIFI_PERMISSIONS = 4101;
     private static final String API_URL =
         "https://ambitious-smoke-035c3f900.6.azurestaticapps.net/api/wifi-scans";
+    private static final String CONNECTIVITY_API_URL =
+        "https://ambitious-smoke-035c3f900.6.azurestaticapps.net/api/connectivity-observations";
+    private static final String PREFS_NAME = "fallback-atlas-connectivity";
+    private static final String PREF_MONITOR_ENABLED = "monitor_enabled";
+    private static final String PREF_PENDING_PREFIX = "pending_";
 
     private WifiManager wifiManager;
     private LocationManager locationManager;
@@ -62,7 +71,29 @@ public class MainActivity extends Activity {
     private TextView countView;
     private Button scanButton;
     private Button shareButton;
+    private Button monitorButton;
+    private TextView monitorStatusView;
     private EditText areaInput;
+    private SharedPreferences preferences;
+    private ConnectivityMonitor connectivityMonitor;
+    private final Map<String, String> lastPublishedStatus = new HashMap<>();
+    private final Map<String, Long> lastPublishedAt = new HashMap<>();
+    private long lastConnectivityUploadAttemptAt = 0L;
+    private boolean activityVisible = false;
+    private static final long CONNECTIVITY_HEARTBEAT_MS = 5 * 60 * 1000L;
+    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
+    private final Runnable connectivityHeartbeat = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityVisible || preferences == null ||
+                !preferences.getBoolean(PREF_MONITOR_ENABLED, false)) return;
+            Map<String, String> current = new HashMap<>(lastPublishedStatus);
+            for (Map.Entry<String, String> item : current.entrySet()) {
+                handleConnectivityObservation(item.getKey(), item.getValue(), "working".equals(item.getValue()));
+            }
+            heartbeatHandler.postDelayed(this, CONNECTIVITY_HEARTBEAT_MS);
+        }
+    };
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final List<NetworkObservation> observations = new ArrayList<>();
     private boolean receiverRegistered = false;
@@ -88,7 +119,20 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        connectivityMonitor = new ConnectivityMonitor(this, new ConnectivityMonitor.Listener() {
+            @Override
+            public void onObservation(String service, String status, boolean internetValidated) {
+                runOnUiThread(() -> handleConnectivityObservation(service, status, internetValidated));
+            }
+
+            @Override
+            public void onMonitorError(String message) {
+                runOnUiThread(() -> setMonitorStatus(message));
+            }
+        });
         setContentView(buildUi());
+        updateMonitorButton();
         renderNetworkRows();
         setStatus("Ready. Allow nearby Wi-Fi/location permission, then scan to see networks the phone actually detects.");
     }
@@ -96,6 +140,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        activityVisible = true;
         if (receiverRegistered) return;
         IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
         if (Build.VERSION.SDK_INT >= 33) {
@@ -104,10 +149,21 @@ public class MainActivity extends Activity {
             registerReceiver(scanReceiver, filter);
         }
         receiverRegistered = true;
+        if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
+            startConnectivityMonitoring();
+        }
     }
 
     @Override
     protected void onStop() {
+        activityVisible = false;
+        heartbeatHandler.removeCallbacks(connectivityHeartbeat);
+        if (connectivityMonitor != null) connectivityMonitor.stop();
+        lastPublishedStatus.clear();
+        lastPublishedAt.clear();
+        if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
+            setMonitorStatus("Monitoring pauses when this app is not visible. Reopen it to continue monitoring and sync pending status.");
+        }
         if (receiverRegistered) {
             unregisterReceiver(scanReceiver);
             receiverRegistered = false;
@@ -117,6 +173,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (connectivityMonitor != null) connectivityMonitor.stop();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -162,7 +219,8 @@ public class MainActivity extends Activity {
 
         areaInput = new EditText(this);
         areaInput.setSingleLine(true);
-        areaInput.setText("SPSU campus, Udaipur");
+        areaInput.setFilters(new InputFilter[] { new InputFilter.LengthFilter(120) });
+        areaInput.setText("Udaipur, Rajasthan");
         areaInput.setHint("e.g. campus building or public place");
         areaInput.setTextSize(15);
         areaInput.setPadding(dp(12), dp(11), dp(12), dp(11));
@@ -170,6 +228,34 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams areaParams = params(-1, -2);
         areaParams.topMargin = dp(7);
         root.addView(areaInput, areaParams);
+
+        TextView areaDisclosure = text("Use the public place or area you are actually testing. This label is not GPS-tracked; update it when you move to a different area.", 12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams areaDisclosureParams = params(-1, -2);
+        areaDisclosureParams.topMargin = dp(5);
+        root.addView(areaDisclosure, areaDisclosureParams);
+
+        TextView monitorHeading = text("Automatic connectivity sharing", 16, Color.rgb(24, 42, 59), true);
+        LinearLayout.LayoutParams monitorHeadingParams = params(-1, -2);
+        monitorHeadingParams.topMargin = dp(18);
+        root.addView(monitorHeading, monitorHeadingParams);
+
+        TextView monitorDisclosure = text(
+            "Optional. While this app is open, Fallback Atlas can observe whether Wi-Fi or mobile data has validated internet access. It shares only the selected area, connection type, status and timestamp. No GPS, SSID, access-point MAC address, phone number or device ID is sent.",
+            12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams monitorDisclosureParams = params(-1, -2);
+        monitorDisclosureParams.topMargin = dp(6);
+        root.addView(monitorDisclosure, monitorDisclosureParams);
+
+        monitorButton = button("Enable automatic monitoring");
+        LinearLayout.LayoutParams monitorButtonParams = params(-1, -2);
+        monitorButtonParams.topMargin = dp(10);
+        root.addView(monitorButton, monitorButtonParams);
+        monitorButton.setOnClickListener(view -> toggleConnectivityMonitoring());
+
+        monitorStatusView = text("Automatic monitoring is off.", 12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams monitorStatusParams = params(-1, -2);
+        monitorStatusParams.topMargin = dp(6);
+        root.addView(monitorStatusView, monitorStatusParams);
 
         scanButton = button("Scan nearby Wi-Fi");
         LinearLayout.LayoutParams scanParams = params(-1, -2);
@@ -492,6 +578,202 @@ public class MainActivity extends Activity {
             } finally {
                 if (connection != null) connection.disconnect();
             }
+        });
+    }
+
+
+    private void toggleConnectivityMonitoring() {
+        boolean enabled = preferences.getBoolean(PREF_MONITOR_ENABLED, false);
+        if (enabled) {
+            new AlertDialog.Builder(this)
+                .setTitle("Stop automatic monitoring?")
+                .setMessage("Monitoring stops immediately. Pending observations that have not been uploaded will be removed from this phone.")
+                .setNegativeButton("Keep monitoring", null)
+                .setPositiveButton("Stop and clear pending", (dialog, which) -> {
+                    preferences.edit()
+                        .putBoolean(PREF_MONITOR_ENABLED, false)
+                        .remove(PREF_PENDING_PREFIX + "wifi")
+                        .remove(PREF_PENDING_PREFIX + "mobile-data")
+                        .apply();
+                    heartbeatHandler.removeCallbacks(connectivityHeartbeat);
+                    if (connectivityMonitor != null) connectivityMonitor.stop();
+                    lastPublishedStatus.clear();
+                    lastPublishedAt.clear();
+                    updateMonitorButton();
+                    setMonitorStatus("Automatic monitoring is off. Pending uploads were cleared.");
+                })
+                .show();
+            return;
+        }
+
+        String area = areaInput.getText().toString().trim();
+        if (area.isEmpty() || area.length() > 120) {
+            areaInput.setError("Enter a public area label (up to 120 characters)");
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+            .setTitle("Enable automatic connectivity sharing?")
+            .setMessage(
+                "While this app is open, Android will report whether Wi-Fi and mobile data have internet access. " +
+                "Only the area label, connection type, status (working/degraded/down), validation result and timestamp are sent. " +
+                "No GPS coordinates, SSIDs, passwords, access-point MAC addresses, phone numbers or device IDs are sent. " +
+                "Observations may be visible to other visitors and are labelled as Android device observations. " +
+                "Uploads are queued locally when offline. Monitoring pauses when you leave this app."
+            )
+            .setNegativeButton("Not now", null)
+            .setPositiveButton("Enable", (dialog, which) -> {
+                preferences.edit().putBoolean(PREF_MONITOR_ENABLED, true).apply();
+                updateMonitorButton();
+                startConnectivityMonitoring();
+            })
+            .show();
+    }
+
+    private void updateMonitorButton() {
+        if (monitorButton == null || preferences == null) return;
+        boolean enabled = preferences.getBoolean(PREF_MONITOR_ENABLED, false);
+        monitorButton.setText(enabled ? "Stop automatic monitoring" : "Enable automatic monitoring");
+        if (!enabled && monitorStatusView != null) {
+            monitorStatusView.setText("Automatic monitoring is off.");
+        }
+    }
+
+    private void startConnectivityMonitoring() {
+        if (!activityVisible || preferences == null ||
+            !preferences.getBoolean(PREF_MONITOR_ENABLED, false) ||
+            connectivityMonitor == null) return;
+        boolean started = connectivityMonitor.start();
+        updateMonitorButton();
+        if (started) {
+            heartbeatHandler.removeCallbacks(connectivityHeartbeat);
+            heartbeatHandler.postDelayed(connectivityHeartbeat, CONNECTIVITY_HEARTBEAT_MS);
+            setMonitorStatus("Monitoring Wi-Fi and mobile data while this app is visible. Status changes and five-minute heartbeats are queued and uploaded when a validated connection is available.");
+        }
+    }
+
+    private void setMonitorStatus(String message) {
+        if (monitorStatusView != null) monitorStatusView.setText(message);
+    }
+
+    private void handleConnectivityObservation(String service, String status, boolean internetValidated) {
+        if (preferences == null || !preferences.getBoolean(PREF_MONITOR_ENABLED, false) || !activityVisible) return;
+        String area = areaInput.getText().toString().trim();
+        if (area.isEmpty() || area.length() > 120) {
+            setMonitorStatus("Enter a public area label to share automated connectivity status.");
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        String previous = lastPublishedStatus.get(service);
+        long lastTime = lastPublishedAt.containsKey(service) ? lastPublishedAt.get(service) : 0L;
+        if (ConnectivityObservationUtils.shouldPublish(previous, status, lastTime, now)) {
+            JSONObject body = new JSONObject();
+            JSONObject observation = new JSONObject();
+            try {
+                observation.put("service", service);
+                observation.put("status", status);
+                observation.put("internetValidated", internetValidated);
+                observation.put("observedAt", Instant.ofEpochMilli(now).toString());
+                body.put("area", area);
+                body.put("observation", observation);
+            } catch (Exception error) {
+                setMonitorStatus("Could not prepare the connectivity observation.");
+                return;
+            }
+
+            lastPublishedStatus.put(service, status);
+            lastPublishedAt.put(service, now);
+            preferences.edit().putString(PREF_PENDING_PREFIX + service, body.toString()).apply();
+            setMonitorStatus(
+                (service.equals("wifi") ? "Wi-Fi" : "Mobile data") + ": " + status +
+                ". The observation is queued locally until the pilot ingestion endpoint accepts it."
+            );
+        }
+
+        if (internetValidated) flushPendingConnectivityObservations();
+    }
+
+    private void flushPendingConnectivityObservations() {
+        if (!activityVisible || preferences == null ||
+            !preferences.getBoolean(PREF_MONITOR_ENABLED, false)) return;
+        long now = System.currentTimeMillis();
+        if (now - lastConnectivityUploadAttemptAt < 30_000L) return;
+
+        Map<String, String> pending = new HashMap<>();
+        for (String service : new String[] { "wifi", "mobile-data" }) {
+            String payload = preferences.getString(PREF_PENDING_PREFIX + service, null);
+            if (payload == null) continue;
+            try {
+                JSONObject json = new JSONObject(payload);
+                JSONObject observation = json.getJSONObject("observation");
+                long observedAt = Instant.parse(observation.getString("observedAt")).toEpochMilli();
+                if (observedAt <= 0L || now - observedAt > 15 * 60 * 1000L) {
+                    preferences.edit().remove(PREF_PENDING_PREFIX + service).apply();
+                } else {
+                    pending.put(service, payload);
+                }
+            } catch (Exception error) {
+                preferences.edit().remove(PREF_PENDING_PREFIX + service).apply();
+            }
+        }
+        if (pending.isEmpty()) return;
+
+        lastConnectivityUploadAttemptAt = now;
+        ioExecutor.execute(() -> {
+            int uploaded = 0;
+            String failureMessage = null;
+            for (Map.Entry<String, String> item : pending.entrySet()) {
+                HttpURLConnection connection = null;
+                try {
+                    connection = (HttpURLConnection) new URL(CONNECTIVITY_API_URL).openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(8_000);
+                    connection.setReadTimeout(8_000);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                    connection.setRequestProperty("Accept", "application/json");
+                    byte[] payload = item.getValue().getBytes(StandardCharsets.UTF_8);
+                    connection.setFixedLengthStreamingMode(payload.length);
+                    try (OutputStream output = connection.getOutputStream()) {
+                        output.write(payload);
+                    }
+                    int code = connection.getResponseCode();
+                    InputStream stream = code >= 200 && code < 400
+                        ? connection.getInputStream() : connection.getErrorStream();
+                    String responseBody = readAll(stream);
+                    JSONObject response = new JSONObject(responseBody.isEmpty() ? "{}" : responseBody);
+                    if (code == 200 || code == 201) {
+                        String current = preferences.getString(PREF_PENDING_PREFIX + item.getKey(), null);
+                        if (item.getValue().equals(current)) {
+                            preferences.edit().remove(PREF_PENDING_PREFIX + item.getKey()).apply();
+                        }
+                        uploaded += response.optInt("accepted", 0);
+                    } else if ("connectivity_ingest_disabled".equals(response.optString("error"))) {
+                        failureMessage = "Local queue is safe. The server-side connectivity pilot is not enabled yet.";
+                    } else if ("area_not_in_pilot".equals(response.optString("error"))) {
+                        failureMessage = "This area is not on the server's pilot allowlist. Nothing was shared.";
+                    } else if (code == 429) {
+                        failureMessage = "The server is rate-limiting updates. Pending status remains on this phone.";
+                    } else {
+                        failureMessage = "Connectivity status was not shared (HTTP " + code + "). Pending data remains on this phone.";
+                    }
+                } catch (Exception error) {
+                    failureMessage = "Could not reach the server. Pending connectivity status remains on this phone.";
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+            }
+
+            final int uploadedCount = uploaded;
+            final String finalFailure = failureMessage;
+            runOnUiThread(() -> {
+                if (uploadedCount > 0) {
+                    setMonitorStatus("Shared " + uploadedCount + " automatic connectivity update(s). No location or device identifier was included.");
+                } else if (finalFailure != null) {
+                    setMonitorStatus(finalFailure);
+                }
+            });
         });
     }
 

@@ -429,3 +429,28 @@ html[data-theme="dark"] .wifi-signal-weak{color:#ff9598;background:#341f24;borde
 .atlas-wifi-popup small{display:block;max-width:240px;color:#526777;font-size:10px;line-height:1.45}
 html[data-theme="dark"] .wifi-feed-controls select{color:var(--ink);background:var(--paper);border-color:var(--line)}
 @media(max-width:760px){.wifi-network-list{grid-template-columns:1fr}.wifi-feed-controls{width:100%}.wifi-feed-controls .button{flex:1}.wifi-feed-controls label{justify-content:space-between;flex:1}.wifi-feed-toolbar .location-permission-note{flex-basis:100%}}
+
+
+/* Low-volume Android connectivity status: one latest state per pilot area/transport. */
+.connectivity-status-panel{margin-top:16px;padding:22px 25px;border:1px solid var(--line);border-radius:16px;background:var(--paper);box-shadow:var(--shadow)}
+.connectivity-status-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.connectivity-status-heading h2{margin:0 0 6px;color:var(--ink);font-size:clamp(20px,2vw,25px);letter-spacing:-.5px}
+.connectivity-status-heading p{max-width:730px;margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+.connectivity-status-badge{flex:0 0 auto;padding:7px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:var(--canvas);font-size:10px;font-weight:700;white-space:nowrap}
+.connectivity-status-empty{margin:0;padding:14px;border:1px dashed var(--line);border-radius:11px;color:var(--muted);background:var(--canvas);font-size:13px;line-height:1.55}
+.connectivity-status-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.connectivity-status-item{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:13px;border:1px solid var(--line);border-radius:11px;background:var(--canvas)}
+.connectivity-status-item>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.connectivity-status-item strong{color:var(--ink);font-size:14px}
+.connectivity-status-item span{color:var(--muted);font-size:11px;line-height:1.45}
+.connectivity-status-item small{color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.connectivity-status-pill{flex:0 0 auto;padding:5px 8px;border:1px solid var(--line);border-radius:999px;font-size:10px!important;font-weight:800}
+.connectivity-working{color:#207659!important;background:#eff9f5;border-color:#c3e6d9}
+.connectivity-degraded{color:#996719!important;background:#fff9ed;border-color:#ecd8b4}
+.connectivity-down{color:#a54445!important;background:#fff0ef;border-color:#f0cece}
+.connectivity-status-disclaimer{margin:11px 0 0;color:var(--muted);font-size:10px;line-height:1.55}
+html[data-theme="dark"] .connectivity-status-item{background:#13222e;border-color:var(--line)}
+html[data-theme="dark"] .connectivity-working{color:#80dfbf!important;background:#102d26;border-color:#2c5d4d}
+html[data-theme="dark"] .connectivity-degraded{color:#f0c579!important;background:#302719;border-color:#5f492a}
+html[data-theme="dark"] .connectivity-down{color:#ff9598!important;background:#341f24;border-color:#63373e}
+@media(max-width:760px){.connectivity-status-panel{padding:18px 16px}.connectivity-status-heading{flex-direction:column;gap:9px}.connectivity-status-list{grid-template-columns:1fr}.connectivity-status-item{align-items:flex-start}}

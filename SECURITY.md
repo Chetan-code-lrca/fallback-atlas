@@ -21,6 +21,7 @@ The maintainer will review reports and coordinate a fix or mitigation. No respon
 Security-relevant areas include:
 - Exposure or misuse of `REPORTS_STORAGE_CONNECTION_STRING` or other deployment credentials.
 - Abuse of anonymous `/api/reports` and `/api/wifi-scans` endpoints, including rate-limit bypass and resource exhaustion.
+- Abuse or spoofing of the restricted `/api/connectivity-observations` pilot endpoint, including area allowlist bypass, concurrent update races and status manipulation.
 - Unsafe handling or rendering of community notes, SSIDs, area labels, and geocoding responses.
 - Unintended disclosure of SSIDs, approximate coordinates, observation timestamps, or other submitted information.
 - Dependency, build workflow, Android companion, and Windows scanner vulnerabilities.
@@ -29,6 +30,8 @@ Security-relevant areas include:
 ## Data and testing precautions
 
 Community outage reports are public community observations, not official utility telemetry. Shared Wi-Fi observations include network names (SSIDs), signal metadata, timestamps, and approximate coordinates and may be visible in the nearby feed for up to 15 minutes. The API uses anonymous access and its current abuse controls are limited; changing area labels may bypass per-area thresholds.
+
+The Android connectivity endpoint is disabled by default. When enabled, it accepts anonymous status submissions only for explicitly allowlisted area labels and overwrites at most one row per area and connection type. This limits storage growth but does not authenticate the Android client or prevent a malicious party from spoofing status for an allowed area. Keep it restricted to known testers; do not treat the area allowlist as authentication.
 
 Do not submit private hotspot names, confidential network information, exact home coordinates, or information about networks you do not have permission to disclose. Do not probe third-party services, overload the public pilot, access another person's data, or test destructive scenarios without prior authorisation.
 

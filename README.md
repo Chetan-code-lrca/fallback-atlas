@@ -20,6 +20,7 @@ Fallback Atlas is an open-source, community-powered web application for sharing 
 - **Interactive map:** MapLibre GL JS with OpenFreeMap tiles and OpenStreetMap attribution.
 - **Global place search:** user-triggered Nominatim search with a small browser cache.
 - **Real nearby Wi-Fi observations:** Android and Windows companion scanners detect nearby access points. The website itself cannot scan the device's Wi-Fi radio.
+- **Automatic Android connectivity observations:** an optional, foreground-only Android monitor reports whether Wi-Fi or mobile data has validated internet. It sends only area, connection type, status and timestamp; the queue is local while offline.
 - **Explicit sharing:** scanners show selected SSIDs and require user confirmation before uploading an observation snapshot.
 - **Privacy-aware payloads:** scanners are designed not to upload passwords, BSSIDs/MAC addresses or device identifiers. SSIDs and approximate coordinates can still be sensitive.
 - **Location and report consent:** using “Use my location” sends browser coordinates to the API for nearby lookups; it does not submit a report. Report coordinates are a separate opt-in, off by default, and rounded to three decimal places when shared.
@@ -43,12 +44,14 @@ flowchart TB
   Map --> Tiles[OpenFreeMap tiles]
   Web --> Search[OpenStreetMap Nominatim]
   Web -->|GET/POST reports| API[Static Web Apps managed Functions]
+  Web -->|GET status| API
   Web -->|GET/POST Wi-Fi scans| API
-  Android[Android Wi-Fi scanner] -->|explicit consent| API
+  Android[Android Wi-Fi + connectivity companion] -->|opt-in status / explicit Wi-Fi scan| API
   Windows[Windows PowerShell scanner] -->|explicit consent| API
   API --> Validate[Validate and apply pilot limits]
   Validate --> Reports[(Azure Table: Reports)]
   Validate --> Wifi[(Azure Table: WifiScans)]
+  Validate --> Status[(Azure Table: ConnectivityStatus · max 2 rows per pilot area)]
   Web --> Local[Browser-local report queue]
 ~~~
 
@@ -61,9 +64,9 @@ For component responsibilities, trust boundaries, storage behavior and offline b
 | Frontend | React 16, Create React App | PWA interface and local report queue |
 | Map | MapLibre GL JS, OpenFreeMap | Interactive map and vector tiles |
 | Place search | OpenStreetMap Nominatim | User-submitted location search |
-| API | Azure Static Web Apps managed Functions, Node.js 22 | HTTP reporting and Wi-Fi scan endpoints |
-| Storage | Azure Data Tables | Optional shared Reports and WifiScans tables |
-| Android | Java, Android WifiManager, Gradle 8.9 | Device-observed Wi-Fi discovery and consent-based upload |
+| API | Azure Static Web Apps managed Functions, Node.js 22 | HTTP reports, Wi-Fi scans and restricted connectivity status |
+| Storage | Existing Azure Data Tables account | Reports, WifiScans and (when pilot is enabled) bounded ConnectivityStatus rows |
+| Android | Java, ConnectivityManager, WifiManager, Gradle 8.9 | Opt-in foreground connectivity monitoring, local queue and consent-based Wi-Fi scan upload |
 | Windows | PowerShell, Windows WLAN API, netsh | Nearby Wi-Fi discovery and consent-based upload |
 | Testing | Jest, Testing Library, Node.js test runner, JUnit | Frontend, API and Android scanner unit tests |
 
@@ -121,6 +124,7 @@ GitHub Actions runs the frontend tests, production build and API test suite usin
 | GET | `/api/health` | Reports whether shared storage is configured and reachable |
 | GET / POST | `/api/reports` | Reads or submits community outage reports |
 | GET / POST | `/api/wifi-scans` | Reads or submits explicitly shared nearby Wi-Fi observations |
+| GET / POST | `/api/connectivity-observations` | Reads or submits allowlisted Android connectivity status (disabled by default) |
 
 The API uses `REPORTS_STORAGE_CONNECTION_STRING` as a server-side Static Web Apps application setting for both Azure Tables. Never expose this value in frontend configuration, screenshots or Git. Complete route schemas, validation rules, examples and setup are in the [API README](api/README.md).
 
@@ -128,7 +132,12 @@ The API uses `REPORTS_STORAGE_CONNECTION_STRING` as a server-side Static Web App
 
 ### Android
 
-The Android app requires Android 11+, user-approved permissions, Wi-Fi and Location services. It shows the SSID, signal strength, frequency, security label and age of the scan. Sharing requires explicit confirmation and a recent scan.
+The Android companion supports two separate workflows:
+
+- **Automatic connectivity monitoring:** opt in to observe Wi-Fi and mobile-data internet validation while the app is visible. It uses Android network callbacks, does not request location, queues the latest status locally while offline and uploads when a validated connection returns. Monitoring pauses when the app leaves the foreground in this first version.
+- **Nearby Wi-Fi scan:** Android 11+, user-approved Wi-Fi/location permissions and Location services are required. It shows SSID, signal strength, frequency, security label and scan age. Sharing a scan still requires explicit confirmation and a recent result.
+
+Automatic ingestion is disabled by default on the server. A restricted area allowlist must be configured before the app can publish connectivity status; this is not authentication and is suitable only for a known pilot cohort.
 
 From the repository root:
 
@@ -159,7 +168,8 @@ The site can run in local-only mode without creating Azure Storage resources. To
 1. Use a dedicated Standard / General-purpose v2 / locally redundant Azure Storage account for the pilot.
 2. Configure `REPORTS_STORAGE_CONNECTION_STRING` in the Azure Static Web App's server-side application settings.
 3. Open `/api/health` and verify it reports `"mode":"shared"`.
-4. Test report submission and Wi-Fi scanning with consenting devices and non-private networks.
+4. Only for a known Android pilot, set `CONNECTIVITY_INGEST_ENABLED=true` and `CONNECTIVITY_ALLOWED_AREAS` to semicolon-separated exact area labels in the same Static Web App's server-side settings. Keep the list short; the endpoint is anonymous and is not production abuse protection.
+5. Test report submission and Wi-Fi scanning with consenting devices and non-private networks.
 
 Do not create a separate Function App or App Service for this HTTP-only Static Web Apps API. Azure Table Storage is billed separately; it is not guaranteed free. See [cost and governance](docs/COST_AND_GOVERNANCE.md).
 
@@ -182,6 +192,7 @@ Do not create a separate Function App or App Service for this HTTP-only Static W
 | [Screenshot guidance](docs/SCREENSHOTS.md) | Genuine capture and privacy requirements |
 | [Cost and governance](docs/COST_AND_GOVERNANCE.md) | Azure footprint, cost cautions, retention and abuse limits |
 | [Public-launch checklist](docs/PUBLIC_LAUNCH_CHECKLIST.md) | Staged rollout and go/no-go conditions |
+| [Connectivity agent pilot](docs/CONNECTIVITY_AGENT_PILOT.md) | Android monitoring, endpoint configuration, privacy and low-cost Azure design |
 | [Classroom demo guide](docs/CLASS_DEMO_GUIDE.md) | Five-minute presentation and classroom checklist |
 | [Udaipur pilot test plan](docs/UDAIPUR_PILOT_TEST_PLAN.md) | Small pilot usability and validation plan |
 | [Contributing](CONTRIBUTING.md) | Contribution practices |

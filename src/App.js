@@ -3,6 +3,7 @@ import './App.css';
 import InteractiveMap from './InteractiveMap';
 import { geocodeLocation } from './geocoding';
 import WifiScanPanel from './WifiScanPanel';
+import ConnectivityStatusPanel from './ConnectivityStatusPanel';
 
 const demoReports = [
   { id: 'demo-1', area: 'Fatehpura, Udaipur', service: 'Mobile data', status: 'degraded', note: 'Illustrative sample only; not a verified local report.', time: 'Demo example', demo: true },
@@ -632,6 +633,8 @@ function App() {
           onRefresh={() => setWifiScanRefreshToken((value) => value + 1)}
           onObservationsChange={handleWifiObservationsChange}
         />
+
+        <ConnectivityStatusPanel area={area} refreshToken={reportRefreshToken} />
 
         {message && <div className="notice" role="status"><span>ⓘ</span><p>{message}</p><button aria-label="Dismiss message" onClick={() => setMessage('')}>×</button></div>}
 
