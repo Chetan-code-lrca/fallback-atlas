@@ -415,6 +415,7 @@ test('connectivity ingestion overwrites one row per area and service', async () 
 });
 
 test('connectivity observations GET returns only fresh status for the requested area', async () => {
+  enableConnectivityPilot();
   const areaKey = areaKeyFor('SPSU campus, Udaipur');
   state.tables.ConnectivityStatus.push({
     partitionKey: areaKey, rowKey: 'wifi', area: 'SPSU campus, Udaipur',
