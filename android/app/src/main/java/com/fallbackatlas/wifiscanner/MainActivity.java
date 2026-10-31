@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
@@ -53,6 +54,11 @@ public class MainActivity extends Activity {
     private static final int REQUEST_WIFI_PERMISSIONS = 4101;
     private static final String API_URL =
         "https://ambitious-smoke-035c3f900.6.azurestaticapps.net/api/wifi-scans";
+    private static final String CONNECTIVITY_API_URL =
+        "https://ambitious-smoke-035c3f900.6.azurestaticapps.net/api/connectivity-observations";
+    private static final String PREFS_NAME = "fallback-atlas-connectivity";
+    private static final String PREF_MONITOR_ENABLED = "monitor_enabled";
+    private static final String PREF_PENDING_PREFIX = "pending_";
 
     private WifiManager wifiManager;
     private LocationManager locationManager;
@@ -62,7 +68,15 @@ public class MainActivity extends Activity {
     private TextView countView;
     private Button scanButton;
     private Button shareButton;
+    private Button monitorButton;
+    private TextView monitorStatusView;
     private EditText areaInput;
+    private SharedPreferences preferences;
+    private ConnectivityMonitor connectivityMonitor;
+    private final Map<String, String> lastPublishedStatus = new HashMap<>();
+    private final Map<String, Long> lastPublishedAt = new HashMap<>();
+    private long lastConnectivityUploadAttemptAt = 0L;
+    private boolean activityVisible = false;
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final List<NetworkObservation> observations = new ArrayList<>();
     private boolean receiverRegistered = false;
@@ -88,7 +102,20 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        connectivityMonitor = new ConnectivityMonitor(this, new ConnectivityMonitor.Listener() {
+            @Override
+            public void onObservation(String service, String status, boolean internetValidated) {
+                runOnUiThread(() -> handleConnectivityObservation(service, status, internetValidated));
+            }
+
+            @Override
+            public void onMonitorError(String message) {
+                runOnUiThread(() -> setMonitorStatus(message));
+            }
+        });
         setContentView(buildUi());
+        updateMonitorButton();
         renderNetworkRows();
         setStatus("Ready. Allow nearby Wi-Fi/location permission, then scan to see networks the phone actually detects.");
     }
@@ -96,6 +123,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        activityVisible = true;
         if (receiverRegistered) return;
         IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
         if (Build.VERSION.SDK_INT >= 33) {
@@ -104,10 +132,18 @@ public class MainActivity extends Activity {
             registerReceiver(scanReceiver, filter);
         }
         receiverRegistered = true;
+        if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
+            startConnectivityMonitoring();
+        }
     }
 
     @Override
     protected void onStop() {
+        activityVisible = false;
+        if (connectivityMonitor != null) connectivityMonitor.stop();
+        if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
+            setMonitorStatus("Monitoring pauses when this app is not visible. Reopen it to continue monitoring and sync pending status.");
+        }
         if (receiverRegistered) {
             unregisterReceiver(scanReceiver);
             receiverRegistered = false;
@@ -117,6 +153,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (connectivityMonitor != null) connectivityMonitor.stop();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -170,6 +207,29 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams areaParams = params(-1, -2);
         areaParams.topMargin = dp(7);
         root.addView(areaInput, areaParams);
+
+        TextView monitorHeading = text("Automatic connectivity sharing", 16, Color.rgb(24, 42, 59), true);
+        LinearLayout.LayoutParams monitorHeadingParams = params(-1, -2);
+        monitorHeadingParams.topMargin = dp(18);
+        root.addView(monitorHeading, monitorHeadingParams);
+
+        TextView monitorDisclosure = text(
+            "Optional. While this app is open, Fallback Atlas can observe whether Wi-Fi or mobile data has validated internet access. It shares only the selected area, connection type, status and timestamp. No GPS, SSID, access-point MAC address, phone number or device ID is sent.",
+            12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams monitorDisclosureParams = params(-1, -2);
+        monitorDisclosureParams.topMargin = dp(6);
+        root.addView(monitorDisclosure, monitorDisclosureParams);
+
+        monitorButton = button("Enable automatic monitoring");
+        LinearLayout.LayoutParams monitorButtonParams = params(-1, -2);
+        monitorButtonParams.topMargin = dp(10);
+        root.addView(monitorButton, monitorButtonParams);
+        monitorButton.setOnClickListener(view -> toggleConnectivityMonitoring());
+
+        monitorStatusView = text("Automatic monitoring is off.", 12, Color.rgb(82, 101, 119), false);
+        LinearLayout.LayoutParams monitorStatusParams = params(-1, -2);
+        monitorStatusParams.topMargin = dp(6);
+        root.addView(monitorStatusView, monitorStatusParams);
 
         scanButton = button("Scan nearby Wi-Fi");
         LinearLayout.LayoutParams scanParams = params(-1, -2);
