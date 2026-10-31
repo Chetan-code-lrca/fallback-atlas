@@ -75,6 +75,8 @@ For the Windows companion, run `tools/windows-wifi-scanner.ps1` in PowerShell on
 
 ## Privacy and safety
 
+- Choosing **Use my location** sends the browser's coordinates to the Fallback Atlas API to look up nearby reports and shared Wi-Fi observations. It does not submit a report.
+- Report coordinates are a separate, optional choice in the report form. The checkbox is off by default; when enabled, coordinates are rounded to three decimal places before sharing. A neighbourhood or public-place label is still required.
 Do not share private hotspot names, confidential network details, exact home coordinates, credentials, passwords, BSSIDs/MAC addresses, or information about networks you do not have permission to disclose. The scanner workflow is designed to omit BSSIDs/MAC addresses, passwords and device identifiers, but SSIDs combined with approximate location can still reveal nearby networks.
 
 The shared API is anonymous and the current per-area limits are pilot safeguards, not a production-grade abuse-control system. Retention windows currently control feed visibility; they do not physically delete old Table Storage entities. See [security policy](../SECURITY.md), [cost and governance](COST_AND_GOVERNANCE.md), and the [public-launch checklist](PUBLIC_LAUNCH_CHECKLIST.md).
