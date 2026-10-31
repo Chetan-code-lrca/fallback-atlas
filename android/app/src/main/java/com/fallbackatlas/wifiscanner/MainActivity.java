@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
+import android.text.InputFilter;
 import android.location.Location;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
@@ -199,6 +200,7 @@ public class MainActivity extends Activity {
 
         areaInput = new EditText(this);
         areaInput.setSingleLine(true);
+        areaInput.setFilters(new InputFilter[] { new InputFilter.LengthFilter(120) });
         areaInput.setText("SPSU campus, Udaipur");
         areaInput.setHint("e.g. campus building or public place");
         areaInput.setTextSize(15);
