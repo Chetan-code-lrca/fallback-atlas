@@ -510,32 +510,6 @@ app.http('connectivity-observations', {
   authLevel: 'anonymous',
   route: 'connectivity-observations',
   handler: async (request, context) => {
-    if (request.method === 'POST') {
-      if (process.env.CONNECTIVITY_INGEST_ENABLED !== 'true') {
-        return response(503, {
-          error: 'connectivity_ingest_disabled',
-          message: 'Automated connectivity sharing is disabled until a restricted pilot area is configured.'
-        });
-      }
-    }
-
-    let table;
-    try {
-      table = await getConnectivityTableClient();
-    } catch (error) {
-      if (error.code === 'STORAGE_NOT_CONFIGURED') {
-        return response(503, {
-          error: 'storage_not_configured',
-          message: 'Shared connectivity storage is not configured.'
-        });
-      }
-      context.error('Fallback Atlas could not connect to connectivity status storage.');
-      return response(503, {
-        error: 'storage_unavailable',
-        message: 'Connectivity observations are temporarily unavailable.'
-      });
-    }
-
     if (request.method === 'GET') {
       const params = new URL(request.url).searchParams;
       const area = String(params.get('area') || '').trim();
@@ -544,6 +518,27 @@ app.http('connectivity-observations', {
           error: 'invalid_area',
           message: 'Provide a public area label up to 120 characters long.'
         });
+      }
+
+      // Do not even create the additional Table when the restricted pilot is off.
+      if (process.env.CONNECTIVITY_INGEST_ENABLED !== 'true' || !isConnectivityAreaAllowed(area)) {
+        return response(200, {
+          mode: 'pilot-disabled',
+          freshnessMinutes: 15,
+          ingestionEnabled: false,
+          observations: []
+        });
+      }
+
+      let table;
+      try {
+        table = await getConnectivityTableClient();
+      } catch (error) {
+        if (error.code === 'STORAGE_NOT_CONFIGURED') {
+          return response(503, { error: 'storage_not_configured', message: 'Shared connectivity storage is not configured.' });
+        }
+        context.error('Fallback Atlas could not connect to connectivity status storage.');
+        return response(503, { error: 'storage_unavailable', message: 'Connectivity observations are temporarily unavailable.' });
       }
 
       try {
@@ -561,8 +556,7 @@ app.http('connectivity-observations', {
         return response(200, {
           mode: 'shared',
           freshnessMinutes: 15,
-          ingestionEnabled: process.env.CONNECTIVITY_INGEST_ENABLED === 'true' &&
-            String(process.env.CONNECTIVITY_ALLOWED_AREAS || '').trim().length > 0,
+          ingestionEnabled: true,
           observations
         });
       } catch (error) {
@@ -575,6 +569,13 @@ app.http('connectivity-observations', {
     }
 
     if (request.method === 'POST') {
+      if (process.env.CONNECTIVITY_INGEST_ENABLED !== 'true') {
+        return response(503, {
+          error: 'connectivity_ingest_disabled',
+          message: 'Automated connectivity sharing is disabled until a restricted pilot area is configured.'
+        });
+      }
+
       const contentLength = Number(request.headers && request.headers.get
         ? request.headers.get('content-length') || 0
         : 0);
@@ -600,6 +601,17 @@ app.http('connectivity-observations', {
           error: 'area_not_in_pilot',
           message: 'This area is not enabled for the restricted connectivity pilot.'
         });
+      }
+
+      let table;
+      try {
+        table = await getConnectivityTableClient();
+      } catch (error) {
+        if (error.code === 'STORAGE_NOT_CONFIGURED') {
+          return response(503, { error: 'storage_not_configured', message: 'Shared connectivity storage is not configured.' });
+        }
+        context.error('Fallback Atlas could not connect to connectivity status storage.');
+        return response(503, { error: 'storage_unavailable', message: 'Connectivity observations are temporarily unavailable.' });
       }
 
       try {
