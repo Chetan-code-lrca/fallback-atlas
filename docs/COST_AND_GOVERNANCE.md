@@ -14,12 +14,12 @@
 1. Keep the current Static Web App on **Free**.
 2. Don't create a separate Functions App, App Service, Application Insights workspace or paid monitoring service for this pilot.
 3. If you enable shared reports, create one **Standard / General-purpose v2 / LRS** Storage account and use the Table service only. The API creates the `Reports` and `WifiScans` tables.
-4. The Android connectivity agent does **not** need another Azure product. It reuses the existing managed Functions API and Storage account. Keep `CONNECTIVITY_INGEST_ENABLED` unset/off until a restricted pilot area is agreed; when enabled, `ConnectivityStatus` stores at most two replaceable rows per allowlisted area.
 4. Avoid premium performance, geo-redundant storage, private networking, custom domains and paid add-ons for this prototype.
-5. Keep the demo dataset small. Report reads examine at most 250 recent rows from a rolling 30-day window; Wi-Fi reads examine at most 1,000 rows from a rolling 15-minute window. Connectivity state is overwrite-only, not an event log, and repeated identical states are throttled.
-6. Deallocate the workshop VM whenever you're not using it.
-7. Set a Cost Management budget/alert for Azure for Students and review actual costs. **A budget alert warns you; it does not automatically stop resources or cap spending.**
-8. Never commit storage connection strings, keys or tokens. Configure secrets only in the Static Web App server-side environment settings.
+5. The Android connectivity agent does **not** need another Azure product. It reuses the existing managed Functions API and Storage account. Keep `CONNECTIVITY_INGEST_ENABLED` unset/off until a restricted pilot area is agreed; when enabled, `ConnectivityStatus` stores at most two replaceable rows per allowlisted area.
+6. Keep the demo dataset small. Report reads examine at most 250 recent rows from a rolling 30-day window; Wi-Fi reads examine at most 1,000 rows from a rolling 15-minute window. Connectivity state is overwrite-only, not an event log, and repeated identical states are throttled.
+7. Deallocate the workshop VM whenever you're not using it.
+8. Set a Cost Management budget/alert for Azure for Students and review actual costs. **A budget alert warns you; it does not automatically stop resources or cap spending.**
+9. Never commit storage connection strings, keys or tokens. Configure secrets only in the Static Web App server-side environment settings.
 
 ## Official references
 
