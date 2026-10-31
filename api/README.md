@@ -26,7 +26,7 @@ Configure these values in Azure Static Web Apps application settings for deploym
 | AzureWebJobsStorage | Local Functions host | Azure Functions host storage. Use an Azurite development connection for local host storage, or an authorised Storage account connection string. |
 | REPORTS_STORAGE_CONNECTION_STRING | Optional for local-only mode; required for shared data | Server-side Azure Table Storage connection string used for Reports, WifiScans and (only when enabled) ConnectivityStatus. |
 | CONNECTIVITY_INGEST_ENABLED | Optional; defaults to disabled | Set to the exact string `true` only when starting a controlled Android connectivity pilot. |
-| CONNECTIVITY_ALLOWED_AREAS | Required to enable ingestion | Semicolon-separated exact public area labels. Example: `SPSU campus, Udaipur;Udaipur City`. Only these normalised labels can write connectivity status. |
+| CONNECTIVITY_ALLOWED_AREAS | Required to enable ingestion | Semicolon-separated exact public area labels. Example: `Udaipur, Rajasthan;Udaipur City`. Only these normalised labels can write connectivity status. |
 
 Never put a storage connection string in frontend configuration, React environment variables, source code, screenshots, or committed files. The repository ignores api/local.settings.json; start from api/local.settings.example.json and keep the populated local file untracked.
 
@@ -191,7 +191,7 @@ Example body:
 
 ```json
 {
-  "area": "SPSU campus, Udaipur",
+  "area": "Udaipur, Rajasthan",
   "latitude": 24.58,
   "longitude": 73.68,
   "networks": [
@@ -259,7 +259,7 @@ Example body:
 
 ```json
 {
-  "area": "SPSU campus, Udaipur",
+  "area": "Udaipur, Rajasthan",
   "observation": {
     "service": "wifi",
     "status": "working",
