@@ -159,6 +159,8 @@ public class MainActivity extends Activity {
         activityVisible = false;
         heartbeatHandler.removeCallbacks(connectivityHeartbeat);
         if (connectivityMonitor != null) connectivityMonitor.stop();
+        lastPublishedStatus.clear();
+        lastPublishedAt.clear();
         if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
             setMonitorStatus("Monitoring pauses when this app is not visible. Reopen it to continue monitoring and sync pending status.");
         }
