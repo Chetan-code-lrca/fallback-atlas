@@ -18,13 +18,12 @@ beforeEach(() => {
   window.FALLBACK_ATLAS_CONFIG = { geocoderUrl: 'https://nominatim.openstreetmap.org/search' };
   geocodeLocation.mockReset();
   global.fetch = jest.fn((url, options) => {
-    if (url === '/api/health') {
-      return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: 'ok', mode: 'local' }) });
-    }
     if (options && options.method === 'POST') {
       return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'storage_not_configured' }) });
     }
-    return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'storage_not_configured' }) });
+    // Leave background GET requests pending unless a test explicitly controls them.
+    // This prevents asynchronous React state updates after the test has moved on.
+    return new Promise(() => {});
   });
   window.fetch = global.fetch;
 });
