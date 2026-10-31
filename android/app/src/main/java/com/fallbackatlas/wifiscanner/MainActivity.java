@@ -678,7 +678,7 @@ public class MainActivity extends Activity {
             try {
                 JSONObject json = new JSONObject(payload);
                 JSONObject observation = json.getJSONObject("observation");
-                long observedAt = Date.parse(observation.getString("observedAt"));
+                long observedAt = Instant.parse(observation.getString("observedAt")).toEpochMilli();
                 if (observedAt <= 0L || now - observedAt > 15 * 60 * 1000L) {
                     preferences.edit().remove(PREF_PENDING_PREFIX + service).apply();
                 } else {
