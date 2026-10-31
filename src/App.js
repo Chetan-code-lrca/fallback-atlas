@@ -330,6 +330,8 @@ function App() {
 
   function useMyLocation() {
     if (!navigator.geolocation) { setMessage('This browser does not support location access. Search for a neighbourhood or public place instead.'); return; }
+    setLocationFromDevice(false);
+    setIncludeCoordinates(false);
     setLocationPending(true);
     navigator.geolocation.getCurrentPosition((position) => {
       setMapCenter([position.coords.longitude, position.coords.latitude]);
