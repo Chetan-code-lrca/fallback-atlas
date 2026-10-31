@@ -138,6 +138,7 @@ function App() {
     } catch (error) { return 'light'; }
   });
   const [locationPending, setLocationPending] = useState(false);
+  const [locationFromDevice, setLocationFromDevice] = useState(false);
   const [radiusKm, setRadiusKm] = useState(1);
   const [nearbyAreaReady, setNearbyAreaReady] = useState(false);
   const [wifiScanRefreshToken, setWifiScanRefreshToken] = useState(0);
@@ -180,6 +181,8 @@ function App() {
   const [formService, setFormService] = useState('Mobile data');
   const [formStatus, setFormStatus] = useState('degraded');
   const [formNote, setFormNote] = useState('');
+  const [includeCoordinates, setIncludeCoordinates] = useState(false);
+  const [formError, setFormError] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -326,13 +329,14 @@ function App() {
         : recentRealReports.length + ' recent community reports. Community evidence is not official utility verification.';
 
   function useMyLocation() {
-    if (!navigator.geolocation) { setMessage('This browser does not support location access. Search for your campus area instead.'); return; }
+    if (!navigator.geolocation) { setMessage('This browser does not support location access. Search for a neighbourhood or public place instead.'); return; }
     setLocationPending(true);
     navigator.geolocation.getCurrentPosition((position) => {
       setMapCenter([position.coords.longitude, position.coords.latitude]);
       setMapZoom(15); setRadiusKm(1); setArea('Within 1 km of you'); setMapLocationLabel('Near you');
-      setFormArea('Within 1 km of you'); setShowDemoMarkers(false); setNearbyAreaReady(true);
-      setMessage('Showing reports within 1 km of your approximate location. Your location stays in this browser unless you submit a report.');
+      setFormArea(''); setFormError(''); setIncludeCoordinates(false); setLocationFromDevice(true);
+      setShowDemoMarkers(false); setNearbyAreaReady(true);
+      setMessage('Your coordinates were sent to Fallback Atlas to look up nearby reports and Wi-Fi observations. No report was submitted.');
       setLocationPending(false);
     }, (error) => {
       setMessage(error && error.code === 1 ? 'Location permission was not granted.' : 'Your location could not be determined. You can still search an area manually.');
@@ -357,6 +361,8 @@ function App() {
       setMapLocationLabel(preset.label);
       setMapCenter(preset.center);
       setMapZoom(preset.zoom);
+      setLocationFromDevice(false);
+      setIncludeCoordinates(false);
       setShowDemoMarkers(true);
       setNearbyAreaReady(true);
       setMessage('Map moved to ' + preset.label + '. The sample markers are illustrative, not verified live service reports.');
@@ -378,6 +384,8 @@ function App() {
       setMapLocationLabel(result.label);
       setMapCenter(result.center);
       setMapZoom(result.zoom);
+      setLocationFromDevice(false);
+      setIncludeCoordinates(false);
       setShowDemoMarkers(false);
       setNearbyAreaReady(true);
       setMessage('Map centered on ' + result.label + '. No verified outage reports are available here yet; Udaipur demo markers are hidden.');
@@ -395,11 +403,18 @@ function App() {
     event.preventDefault();
     if (reportSubmitting) return;
 
-    const reportArea = formArea.trim() || area;
+    const reportArea = formArea.trim();
+    if (!reportArea || reportArea.length > 120) {
+      setFormError('Enter a neighbourhood or public place (up to 120 characters).');
+      return;
+    }
+    setFormError('');
     const preset = findLocalArea(reportArea);
     let reportCenter = null;
-    if (preset) reportCenter = preset.center;
-    else if (reportArea.toLowerCase() === mapLocationLabel.trim().toLowerCase()) reportCenter = mapCenter;
+    if (includeCoordinates) {
+      if (preset) reportCenter = preset.center;
+      else if (locationFromDevice || reportArea.toLowerCase() === mapLocationLabel.trim().toLowerCase()) reportCenter = mapCenter;
+    }
 
     const payload = {
       area: reportArea,
@@ -474,6 +489,13 @@ function App() {
     }
   }
 
+  function openReportForm() {
+    setFormArea(mapLocationLabel === 'Near you' ? '' : area);
+    setIncludeCoordinates(false);
+    setFormError('');
+    setReportOpen(true);
+  }
+
   async function syncPendingReports() {
     if (syncingPending || pendingReports.length === 0 || apiMode !== 'shared') return;
     setSyncingPending(true);
@@ -530,7 +552,7 @@ function App() {
           <span className="brand-copy"><strong>Fallback Atlas</strong><small>Know what still works</small></span>
         </a>
         <nav className="top-nav" aria-label="Main navigation">
-          <a href="#campus-wifi">Campus Wi-Fi</a>
+          <a href="#nearby-wifi">Nearby Wi-Fi</a>
           <a href="#status">Community reports</a>
           <a href="#how-it-works">Our approach</a>
         </nav>
@@ -538,7 +560,7 @@ function App() {
           <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Switch to day view' : 'Switch to night view'} title={theme === 'dark' ? 'Switch to day view' : 'Switch to night view'}>
             <span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span><span>{theme === 'dark' ? 'Day view' : 'Night view'}</span>
           </button>
-          <button className="button button-dark top-report" onClick={() => { setFormArea(area); setReportOpen(true); }}>
+          <button className="button button-dark top-report" onClick={openReportForm}>
             <span aria-hidden="true">＋</span> Share a report
           </button>
         </div>
@@ -547,9 +569,9 @@ function App() {
       <main id="home">
         <section className="hero">
           <div className="hero-copy">
-            <div className="eyebrow"><span className="eyebrow-dot" /> CAMPUS & COMMUNITY CONNECTIVITY</div>
-            <h1>Find a connection that <span>works.</span></h1>
-            <p>Wi-Fi problems shouldn't stop your day. Check nearby network reports, test whether the internet is reachable, and help your campus know what's working.</p>
+            <div className="eyebrow"><span className="eyebrow-dot" /> ESSENTIAL SERVICES · COMMUNITY SIGNALS</div>
+            <h1>Know what still <span>works.</span></h1>
+            <p>When power or connectivity is disrupted, check recent community observations for mobile data, fixed broadband and electricity. Share what you have actually observed so people nearby can decide what to try next.</p>
             <form className="search-form" onSubmit={searchArea}>
               <span className="search-icon" aria-hidden="true">⌕</span>
               <label className="visually-hidden" htmlFor="area-search">Search area or PIN code</label>
@@ -584,10 +606,10 @@ function App() {
               {!browserOnline
                 ? 'The app shell and local report form can work after the first online visit. Map tiles and location search need internet; queued reports have not been shared yet.'
                 : apiMode === 'shared'
-                  ? 'Your report can help nearby students. Community reports are not official network measurements.'
+                  ? 'Your report can help people nearby. Community reports are not official service measurements.'
                   : pendingReports.length
                     ? pendingReports.length + ' report(s) are pending sync and remain on this device only.'
-                    : 'Reports are currently saved only on this device, so classmates cannot see them yet.'}
+                    : 'Reports are currently saved only on this device, so other visitors cannot see them yet.'}
             </small>
           </div>
           {apiMode === 'shared' && pendingReports.length > 0 && (
@@ -613,7 +635,7 @@ function App() {
 
         <section className="status-overview" id="status">
           <div className="section-heading">
-            <div><span className="section-kicker">LOCAL CONNECTIVITY · COMMUNITY REPORTS</span><h2>{area}</h2></div>
+            <div><span className="section-kicker">ESSENTIAL SERVICES · COMMUNITY REPORTS</span><h2>{area}</h2></div>
             <span className="sample-tag"><span /> {hasSampleReports ? 'DEMO DATA' : sharedReportCount ? 'SHARED REPORTS' : localReports.length ? 'LOCAL REPORTS' : 'NO REPORTS'}</span>
           </div>
           <div className="summary-grid">
@@ -635,7 +657,7 @@ function App() {
 
           <aside className="panel updates-panel">
             <div className="panel-heading updates-heading">
-              <div><span className="section-kicker">CAMPUS & COMMUNITY</span><h3>Recent reports</h3></div>
+              <div><span className="section-kicker">COMMUNITY UPDATES</span><h3>Recent reports</h3></div>
               <div className="updates-heading-actions">
                 <button className="refresh-button" type="button" onClick={() => setReportRefreshToken((current) => current + 1)} aria-label="Refresh community reports" title="Fetch the latest reports">↻ Refresh</button>
                 <span className="count-bubble" aria-label={areaReports.length + ' visible reports'}>{areaReports.length}</span>
@@ -667,8 +689,8 @@ function App() {
             {activeView === 'feed' && <div className="report-feed">
               {visibleReports.length === 0 ? <div className="empty-state"><span>⌁</span><strong>No reports in this filter</strong><p>Try a different service or submit a local example.</p></div> : visibleReports.map((report) => <article className="feed-item" key={report.id}><div className="feed-item-top"><strong>{report.service}</strong><StatusPill status={report.status} /></div><span className="feed-area">⌖ {report.area}</span><p>{report.note}</p><div className="feed-metadata"><span className={'freshness-pill ' + freshnessClass(report)}>{freshnessLabel(report)} · {timeAgo(report)}</span><small>{report.demo ? 'Demo only' : report.shared ? 'Shared community report' : 'Local only · pending sync'}</small></div></article>)}
             </div>}
-            <button className="button button-outline full-button" onClick={() => { setFormArea(area); setReportOpen(true); }}><span>＋</span> Share a report</button>
-            <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}{apiMode === 'shared' ? 'Shared reports are community-submitted, not official outage confirmations.' : 'Local reports are saved in this browser and are not shared yet.'}</p>
+            <button className="button button-outline full-button" onClick={openReportForm}><span>＋</span> Share a report</button>
+            <p className="panel-disclaimer">{hasSampleReports ? 'Demo data is illustrative. ' : ''}{apiMode === 'shared' ? 'Shared reports are community-submitted, not official service confirmations.' : 'Local reports are saved in this browser and are not shared yet.'}</p>
           </aside>
         </section>
 
@@ -682,14 +704,16 @@ function App() {
         </section>
       </main>
 
-      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Built for campus and community resilience</span><span className="footer-status"><i /> {!browserOnline ? 'Offline · local queue available' : apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
+      <footer className="footer"><a className="footer-brand" href="#home"><SignalMark /> fallback atlas</a><span>Built for community resilience</span><span className="footer-status"><i /> {!browserOnline ? 'Offline · local queue available' : apiMode === 'shared' ? 'Shared reports online' : apiMode === 'checking' ? 'Checking backend' : 'Local-only mode'}</span></footer>
 
       {reportOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
         <section className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
           <div className="modal-heading"><div><span className="section-kicker">COMMUNITY UPDATE</span><h2 id="report-title">Report local status</h2></div><button className="modal-close" aria-label="Close report form" onClick={() => setReportOpen(false)}>×</button></div>
           <div className="modal-demo-note"><strong>{apiMode === 'shared' ? 'Community report' : 'Local fallback enabled'}</strong><span>{apiMode === 'shared' ? 'Your report will be shared with visitors near this area. Do not include personal information.' : 'Until storage is configured, this report stays in your browser and will be marked pending sync.'}</span></div>
           <form onSubmit={submitReport} className="report-form">
-            <label>Area or neighbourhood<input required value={formArea} onChange={(event) => setFormArea(event.target.value)} placeholder="e.g. Fatehpura, Udaipur" /></label>
+            <label>Area or neighbourhood<input id="report-area" required maxLength={120} value={formArea} onChange={(event) => { setFormArea(event.target.value); setFormError(''); }} placeholder="e.g. Fatehpura, Udaipur or a nearby public place" /><small className="field-hint">Use a neighbourhood or public place, not a private home address.</small></label>
+            {formError && <p className="field-hint field-error" role="alert">{formError}</p>}
+            <label className="coordinate-opt-in" htmlFor="include-report-coordinates"><input id="include-report-coordinates" type="checkbox" checked={includeCoordinates} onChange={(event) => setIncludeCoordinates(event.target.checked)} /><span><strong>Include approximate map coordinates (optional)</strong><small>Off by default. When shared, coordinates are rounded to three decimal places.</small></span></label>
             <label>Infrastructure<select value={formService} onChange={(event) => setFormService(event.target.value)}>{serviceOptions.map((service) => <option key={service}>{service}</option>)}</select></label>
             <fieldset><legend>What's the current status?</legend><div className="status-choice-list">{statusOptions.map((option) => <label key={option.value} className={'status-choice choice-' + option.value}><input type="radio" name="status" value={option.value} checked={formStatus === option.value} onChange={(event) => setFormStatus(event.target.value)} /><span className="choice-dot" /><span><strong>{option.label}</strong><small>{option.hint}</small></span></label>)}</div></fieldset>
             <label>What did you observe? <span className="optional-label">Optional</span><textarea rows="3" maxLength="280" value={formNote} onChange={(event) => setFormNote(event.target.value)} placeholder="Share a brief, non-personal observation." /></label>
