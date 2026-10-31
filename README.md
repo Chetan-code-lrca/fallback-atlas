@@ -92,13 +92,13 @@ The existing GitHub workflow is configured to deploy the root `api/` folder as m
 4. Save, then open `/api/health` on the live website. Shared mode is ready when the response says `"mode":"shared"`.
 5. Submit an outage report to verify shared reports. For Wi-Fi observations, build and run the Android scanner, scan a real network, then explicitly choose Share scan. Open the site on the same area and press Refresh; observations are shown only when they are under 15 minutes old.
 
-See [API setup](api/README.md), [cost and governance](docs/COST_AND_GOVERNANCE.md), [class demo guide](docs/CLASS_DEMO_GUIDE.md) and [architecture](docs/ARCHITECTURE.md).
+See [API setup](api/README.md), [cost and governance](docs/COST_AND_GOVERNANCE.md), [public-launch checklist](docs/PUBLIC_LAUNCH_CHECKLIST.md), [class demo guide](docs/CLASS_DEMO_GUIDE.md) and [architecture](docs/ARCHITECTURE.md).
 
 **Cost note:** Static Web Apps Free includes managed Functions APIs within plan limits. Azure Table Storage is billed separately according to storage and transactions and consumes Azure for Students credit. Do not treat it as free; keep the data small, deallocate the workshop VM and monitor Cost Management. If you cannot accept any additional Azure usage, leave the backend unconfigured and keep local-only mode.
 
 ## Safety and data limitations
 
-- Outage reports are community-submitted, not official utility telemetry. Wi-Fi signal observations are detected by an Android device, but do not establish that the AP has working internet.
+- Outage reports are community-submitted, not official utility telemetry. Wi-Fi observations can come from Android or Windows companion scanners; Windows dBm values are estimates derived from signal percentage. Neither scanner establishes that an access point has working internet.
 - Evidence freshness is a signal, not proof of correctness or independent verification.
 - No user account, phone number, device identifier or access-point MAC address is collected by the Android scanner. Sharing requires explicit consent and includes SSID plus approximate coordinates; do not share private networks.
 - Nominatim's public service is rate-limited at the application level (maximum one request per second) and suitable only for moderate, user-triggered search. Browser cache cannot enforce a global rate limit for all visitors. Read the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
