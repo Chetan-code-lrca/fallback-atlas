@@ -204,6 +204,8 @@ test('report coordinates are excluded unless the user explicitly opts in', async
   const consent = container.querySelector('#include-report-coordinates');
   expect(consent).not.toBeNull();
   expect(consent.checked).toBe(false);
+  expect(container.querySelector('.coordinate-opt-in').textContent)
+    .toContain('Include it only when it matches the area you are reporting');
 
   await act(async () => {
     fireEvent.click(buttonContaining(container, 'Submit report'));
