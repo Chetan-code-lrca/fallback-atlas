@@ -17,6 +17,8 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.CancellationSignal;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -78,6 +80,20 @@ public class MainActivity extends Activity {
     private final Map<String, Long> lastPublishedAt = new HashMap<>();
     private long lastConnectivityUploadAttemptAt = 0L;
     private boolean activityVisible = false;
+    private static final long CONNECTIVITY_HEARTBEAT_MS = 5 * 60 * 1000L;
+    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
+    private final Runnable connectivityHeartbeat = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityVisible || preferences == null ||
+                !preferences.getBoolean(PREF_MONITOR_ENABLED, false)) return;
+            Map<String, String> current = new HashMap<>(lastPublishedStatus);
+            for (Map.Entry<String, String> item : current.entrySet()) {
+                handleConnectivityObservation(item.getKey(), item.getValue(), "working".equals(item.getValue()));
+            }
+            heartbeatHandler.postDelayed(this, CONNECTIVITY_HEARTBEAT_MS);
+        }
+    };
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
     private final List<NetworkObservation> observations = new ArrayList<>();
     private boolean receiverRegistered = false;
@@ -141,6 +157,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         activityVisible = false;
+        heartbeatHandler.removeCallbacks(connectivityHeartbeat);
         if (connectivityMonitor != null) connectivityMonitor.stop();
         if (preferences != null && preferences.getBoolean(PREF_MONITOR_ENABLED, false)) {
             setMonitorStatus("Monitoring pauses when this app is not visible. Reopen it to continue monitoring and sync pending status.");
@@ -576,6 +593,7 @@ public class MainActivity extends Activity {
                         .remove(PREF_PENDING_PREFIX + "wifi")
                         .remove(PREF_PENDING_PREFIX + "mobile-data")
                         .apply();
+                    heartbeatHandler.removeCallbacks(connectivityHeartbeat);
                     if (connectivityMonitor != null) connectivityMonitor.stop();
                     lastPublishedStatus.clear();
                     lastPublishedAt.clear();
@@ -626,7 +644,9 @@ public class MainActivity extends Activity {
         boolean started = connectivityMonitor.start();
         updateMonitorButton();
         if (started) {
-            setMonitorStatus("Monitoring Wi-Fi and mobile data while this app is visible. Status changes are queued and uploaded when a validated connection is available.");
+            heartbeatHandler.removeCallbacks(connectivityHeartbeat);
+            heartbeatHandler.postDelayed(connectivityHeartbeat, CONNECTIVITY_HEARTBEAT_MS);
+            setMonitorStatus("Monitoring Wi-Fi and mobile data while this app is visible. Status changes and five-minute heartbeats are queued and uploaded when a validated connection is available.");
         }
     }
 
