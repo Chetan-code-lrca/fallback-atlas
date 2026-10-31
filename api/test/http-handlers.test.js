@@ -149,7 +149,7 @@ function validWifiScan(overrides = {}) {
 
 beforeEach(resetState);
 
-test('health returns bounded diagnostics when storage initialization fails', async () => {
+test('health initialization failure returns bounded diagnostics', async () => {
   state.createTableErrors.Reports = true;
   const result = await invoke('health', 'GET', 'health?diagnostics=1');
   assert.equal(result.status, 503);
