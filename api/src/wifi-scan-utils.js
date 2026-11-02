@@ -9,6 +9,12 @@ function cleanText(value, maxLength) {
   return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
+function parseCoordinate(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return NaN;
+  if (typeof value === 'string' && value.trim() === '') return NaN;
+  return Number(value);
+}
+
 function normalizeArea(value) {
   return cleanText(value, MAX_AREA_LENGTH).normalize('NFKC').toLocaleLowerCase('en').replace(/\s+/g, ' ');
 }
@@ -24,8 +30,8 @@ function validateWifiScanInput(input, now = new Date()) {
   const area = cleanText(input.area, MAX_AREA_LENGTH);
   if (!area) return { ok: false, error: 'An area label is required.' };
 
-  const latitude = Number(input.latitude);
-  const longitude = Number(input.longitude);
+  const latitude = parseCoordinate(input.latitude);
+  const longitude = parseCoordinate(input.longitude);
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
       !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     return { ok: false, error: 'Valid latitude and longitude are required to share nearby scans.' };
@@ -92,6 +98,8 @@ function validateWifiScanInput(input, now = new Date()) {
 }
 
 function toApiWifiScan(entity) {
+  const latitude = parseCoordinate(entity.latitude);
+  const longitude = parseCoordinate(entity.longitude);
   return {
     id: String(entity.id || ''),
     area: String(entity.area || ''),
@@ -101,8 +109,10 @@ function toApiWifiScan(entity) {
     signalType: String(entity.signalType || 'android-rssi'),
     frequencyMhz: Number(entity.frequencyMhz),
     security: String(entity.security || 'Unknown'),
-    latitude: Number(entity.latitude),
-    longitude: Number(entity.longitude),
+    ...(Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+        Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+      ? { latitude, longitude }
+      : {}),
     createdAt: String(entity.createdAt || ''),
     observedAt: String(entity.observedAt || entity.createdAt || '')
   };
