@@ -70,3 +70,20 @@ test('preserves Windows signal percentage and labels the derived dBm as an estim
   assert.equal(result.value.networks[0].signalPercent, 40);
   assert.equal(result.value.networks[0].signalType, 'windows-percent-estimate');
 });
+
+
+test('rejects missing, blank, null and boolean coordinates', () => {
+  const now = new Date('2026-10-27T12:00:00.000Z');
+  const networks = [{ networkName: 'ap', signalDbm: -50, frequencyMhz: 5180, observedAt: now.toISOString() }];
+  const base = { area: 'Campus', networks };
+  assert.equal(validateWifiScanInput(base, now).ok, false);
+  assert.equal(validateWifiScanInput({ ...base, latitude: '', longitude: '' }, now).ok, false);
+  assert.equal(validateWifiScanInput({ ...base, latitude: null, longitude: 73.7 }, now).ok, false);
+  assert.equal(validateWifiScanInput({ ...base, latitude: false, longitude: 73.7 }, now).ok, false);
+});
+
+test('does not serialize null stored coordinates as latitude and longitude zero', () => {
+  const result = toApiWifiScan({ networkName: 'ap', latitude: null, longitude: null });
+  assert.equal(Object.hasOwn(result, 'latitude'), false);
+  assert.equal(Object.hasOwn(result, 'longitude'), false);
+});
