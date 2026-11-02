@@ -94,3 +94,28 @@ test('generic outage reports do not expose legacy manually entered network names
   assert.equal(Object.prototype.hasOwnProperty.call(report, 'partitionKey'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(report, 'rowKey'), false);
 });
+
+
+test('rejects non-numeric coordinate types instead of coercing them to zero', () => {
+  const base = { area: 'Udaipur', service: 'Power', status: 'working' };
+  assert.equal(validateReportInput({ ...base, latitude: false, longitude: 73.7 }).ok, false);
+  assert.equal(validateReportInput({ ...base, latitude: [], longitude: 73.7 }).ok, false);
+  assert.equal(validateReportInput({ ...base, latitude: '', longitude: 73.7 }).ok, false);
+});
+
+test('accepts valid numeric-string coordinates for compatibility', () => {
+  const result = validateReportInput({
+    area: 'Udaipur', service: 'Power', status: 'working', latitude: '24.58', longitude: '73.68'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.latitude, 24.58);
+  assert.equal(result.value.longitude, 73.68);
+});
+
+test('does not serialize null or invalid stored coordinates as zero', () => {
+  const report = toApiReport({
+    id: 'legacy-no-coords', area: 'Udaipur', latitude: null, longitude: null
+  });
+  assert.equal(Object.hasOwn(report, 'latitude'), false);
+  assert.equal(Object.hasOwn(report, 'longitude'), false);
+});
