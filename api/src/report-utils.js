@@ -14,6 +14,16 @@ function cleanText(value, maxLength) {
     .slice(0, maxLength);
 }
 
+function parseCoordinate(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return NaN;
+  if (typeof value === 'string' && value.trim() === '') return NaN;
+  return Number(value);
+}
+
+function hasCoordinate(value) {
+  return value !== undefined && value !== null && value !== '';
+}
+
 function normalizeArea(value) {
   return cleanText(value, MAX_AREA_LENGTH)
     .normalize('NFKC')
@@ -47,8 +57,8 @@ function validateReportInput(input, now = new Date()) {
   }
 
   const note = cleanText(input.note || '', MAX_NOTE_LENGTH);
-  const hasLatitude = input.latitude !== undefined && input.latitude !== null && input.latitude !== '';
-  const hasLongitude = input.longitude !== undefined && input.longitude !== null && input.longitude !== '';
+  const hasLatitude = hasCoordinate(input.latitude);
+  const hasLongitude = hasCoordinate(input.longitude);
   if (hasLatitude !== hasLongitude) {
     return { ok: false, error: 'Latitude and longitude must be provided together.' };
   }
@@ -56,8 +66,8 @@ function validateReportInput(input, now = new Date()) {
   let latitude;
   let longitude;
   if (hasLatitude && hasLongitude) {
-    latitude = Number(input.latitude);
-    longitude = Number(input.longitude);
+    latitude = parseCoordinate(input.latitude);
+    longitude = parseCoordinate(input.longitude);
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       return { ok: false, error: 'Coordinates are invalid.' };
@@ -108,6 +118,9 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 function toApiReport(entity) {
+  const hasCoordinates = hasCoordinate(entity.latitude) && hasCoordinate(entity.longitude);
+  const latitude = hasCoordinates ? parseCoordinate(entity.latitude) : NaN;
+  const longitude = hasCoordinates ? parseCoordinate(entity.longitude) : NaN;
   return {
     id: String(entity.id || entity.rowKey || ''),
     area: String(entity.area || ''),
@@ -118,13 +131,14 @@ function toApiReport(entity) {
     observedAt: String(entity.observedAt || entity.createdAt || ''),
     shared: true,
     demo: false,
-    ...(Number.isFinite(Number(entity.latitude)) && Number.isFinite(Number(entity.longitude))
-      ? { latitude: Number(entity.latitude), longitude: Number(entity.longitude) }
+    ...(Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+        Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+      ? { latitude, longitude }
       : {})
   };
 }
 
 module.exports = {
-  SERVICES, STATUSES, cleanText, normalizeArea, areaKeyFor,
+  SERVICES, STATUSES, cleanText, parseCoordinate, normalizeArea, areaKeyFor,
   validateReportInput, reverseTimestampKey, haversineKm, toApiReport
 };
