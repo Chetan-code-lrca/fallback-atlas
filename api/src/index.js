@@ -11,10 +11,14 @@ const {
 } = require('./report-utils');
 const { validateWifiScanInput, toApiWifiScan } = require('./wifi-scan-utils');
 const { validateConnectivityObservationInput, toApiConnectivityObservation } = require('./connectivity-observation-utils');
+const { readJsonBody } = require('./request-utils');
 
 const TABLE_NAME = 'Reports';
 const REPORTS_PARTITION = 'reports';
 const MAX_LIST_ROWS = 250;
+const MAX_REPORT_BODY_BYTES = 8 * 1024;
+const MAX_WIFI_SCAN_BODY_BYTES = 32 * 1024;
+const MAX_CONNECTIVITY_BODY_BYTES = 8 * 1024;
 const MAX_REPORTS_PER_AREA_WINDOW = 30;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const REPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -219,12 +223,13 @@ app.http('reports', {
     }
 
     if (request.method === 'POST') {
-      let input;
-      try {
-        input = await request.json();
-      } catch (error) {
-        return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
+      const parsedBody = await readJsonBody(request, MAX_REPORT_BODY_BYTES);
+      if (!parsedBody.ok) {
+        return parsedBody.tooLarge
+          ? response(413, { error: 'payload_too_large', message: 'Report payload exceeds the 8 KiB limit.' })
+          : response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
       }
+      const input = parsedBody.value;
 
       const validation = validateReportInput(input);
       if (!validation.ok) {
@@ -404,12 +409,13 @@ app.http('wifi-scans', {
     }
 
     if (request.method === 'POST') {
-      let input;
-      try {
-        input = await request.json();
-      } catch (error) {
-        return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
+      const parsedBody = await readJsonBody(request, MAX_WIFI_SCAN_BODY_BYTES);
+      if (!parsedBody.ok) {
+        return parsedBody.tooLarge
+          ? response(413, { error: 'payload_too_large', message: 'Wi-Fi scan payload exceeds the 32 KiB limit.' })
+          : response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
       }
+      const input = parsedBody.value;
 
       const validation = validateWifiScanInput(input);
       if (!validation.ok) {
@@ -576,23 +582,13 @@ app.http('connectivity-observations', {
         });
       }
 
-      const contentLength = Number(request.headers && request.headers.get
-        ? request.headers.get('content-length') || 0
-        : 0);
-      if (Number.isFinite(contentLength) && contentLength > 8192) {
-        return response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under 8 KB.' });
+      const parsedBody = await readJsonBody(request, MAX_CONNECTIVITY_BODY_BYTES);
+      if (!parsedBody.ok) {
+        return parsedBody.tooLarge
+          ? response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under the 8 KiB limit.' })
+          : response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
       }
-
-      let input;
-      try {
-        input = await request.json();
-      } catch (error) {
-        return response(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' });
-      }
-
-      if (Buffer.byteLength(JSON.stringify(input), 'utf8') > 8192) {
-        return response(413, { error: 'payload_too_large', message: 'Connectivity payloads must be under 8 KB.' });
-      }
+      const input = parsedBody.value;
 
       const validation = validateConnectivityObservationInput(input);
       if (!validation.ok) {
