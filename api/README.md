@@ -104,6 +104,18 @@ npm test
 
 Install dependencies in the api directory before running the local Functions host. The frontend and API dependencies are managed separately.
 
+## Request-body limits
+
+POST handlers reject oversized JSON with HTTP 413 before parsing the body stream. The current limits are:
+
+| Endpoint | Maximum JSON body |
+| --- | ---: |
+| POST /api/reports | 8 KiB |
+| POST /api/wifi-scans | 32 KiB |
+| POST /api/connectivity-observations | 8 KiB |
+
+The API checks a declared Content-Length when present and also counts streamed bytes, so chunked requests without that header are bounded. These application limits complement, but do not replace, platform-level request and concurrency limits.
+
 ## Endpoint reference
 
 ### GET /api/health
